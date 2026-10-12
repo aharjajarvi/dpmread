@@ -19,25 +19,21 @@ version 0.1 and are updated with each release.
 
 ```mermaid
 flowchart TD
-    img([image]) --> ch[colour channels]
-    ch --> lad[enhancement ladder<br/>+ tiles of large photos]
-    lad --> zx{zxing-cpp pass<br/>on every variant}
-    zx -- decoded --> res
-    zx -- no --> gv[grid decoder on grey variants<br/>and unread tiles]
-    zx -. failed outlines<br/>as extra candidates .-> gv
-    gv --> q[candidate quads]
-    q --> fit[fit grid on finder / timing pattern<br/>per size and orientation]
-    fit --> rs{sample with confidence,<br/>Reed-Solomon with erasures}
-    rs -- decoded --> res
-    rs -- no, fit is strong --> resc{rescue sampling}
-    resc -- decoded --> res
-    resc -- no --> warp{warped grid}
-    rs -- no, fit is weak --> warp
-    warp -- decoded --> res
-    warp -- no --> qz{fit, sampling and rescue again<br/>without the quiet zone}
-    qz -- decoded --> res
-    qz -- no --> nm([near miss report])
-    res([decoded text])
+    img([image]) --> lad["colour channels → enhancement ladder<br/>(+ tiles of large photos)"]
+    lad --> zx["zxing-cpp pass on every variant"]
+    zx -- no read --> gv["grid decoder on grey variants and unread tiles:<br/>candidate quads, grid fit on finder / timing pattern"]
+    zx -. failed outlines as candidates .-> gv
+    gv --> rs["sample with confidence,<br/>Reed-Solomon with erasures"]
+    rs -- "fails, strong fit" --> resc["rescue sampling"]
+    rs -- "fails, weak fit" --> warp
+    resc -- fails --> warp["warped grid"]
+    warp -- fails --> qz["fit, sampling, rescue again<br/>without the quiet zone"]
+    qz -- fails --> nm([near miss report])
+    zx -- read --> res([decoded text])
+    rs -- read --> res
+    resc -- read --> res
+    warp -- read --> res
+    qz -- read --> res
 ```
 
 1. **Colour channels.** The image is converted to several grey channels
