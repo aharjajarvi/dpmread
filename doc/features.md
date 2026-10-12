@@ -17,14 +17,27 @@ version 0.1 and are updated with each release.
 
 ## How a read works
 
-```
-image ──► colour channels ──► enhancement ladder ──► zxing-cpp pass ──► decoded?
-                                     │                                     │ no
-                                     └──────────► grid decoder ◄───────────┘
-                                                    │
-                     find candidate quads ─► fit grid on finder / timing pattern
-                     ─► sample modules with confidence ─► Reed-Solomon with erasures
-                     ─► rescue sampling ─► warped grid ─► decoded / near miss
+```mermaid
+flowchart TD
+    img([image]) --> ch[colour channels]
+    ch --> lad[enhancement ladder<br/>+ tiles of large photos]
+    lad --> zx{zxing-cpp pass<br/>on every variant}
+    zx -- decoded --> res
+    zx -- no --> gv[grid decoder on grey variants<br/>and unread tiles]
+    zx -. failed outlines<br/>as extra candidates .-> gv
+    gv --> q[candidate quads]
+    q --> fit[fit grid on finder / timing pattern<br/>per size and orientation]
+    fit --> rs{sample with confidence,<br/>Reed-Solomon with erasures}
+    rs -- decoded --> res
+    rs -- no, fit is strong --> resc{rescue sampling}
+    resc -- decoded --> res
+    resc -- no --> warp{warped grid}
+    rs -- no, fit is weak --> warp
+    warp -- decoded --> res
+    warp -- no --> qz{fit, sampling and rescue again<br/>without the quiet zone}
+    qz -- decoded --> res
+    qz -- no --> nm([near miss report])
+    res([decoded text])
 ```
 
 1. **Colour channels.** The image is converted to several grey channels
@@ -60,7 +73,9 @@ image ──► colour channels ──► enhancement ladder ──► zxing-cpp
    - if that fails, a **warped grid**: the timing pattern is tracked
      globally along each edge, so marks whose module pitch drifts across
      the symbol (uneven marking speed, curved or stretched material) are
-     sampled at the real module positions instead of an evenly spaced grid.
+     sampled at the real module positions instead of an evenly spaced grid;
+   - if that fails, the same steps again without assuming a quiet zone
+     around the symbol (marks printed right up to an edge or a label).
 5. **Result.** The first decode that passes Reed-Solomon wins
    (`--exhaustive` tries every method and keeps the majority result). If
    nothing decodes, the report gives a **near miss**: the best candidate's
