@@ -17,7 +17,7 @@ env:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install stable --profile minimal && rustup default stable
@@ -58,7 +58,7 @@ jobs:
 
   release:
     needs: [linux, windows]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
