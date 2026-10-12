@@ -3,7 +3,8 @@
 //! every queued image is read (and `SETTLE_S` later), then closes. With
 //! `DPMREAD_GUI_SELECT=N` table line N is selected first (detail pane), with
 //! `DPMREAD_GUI_SETTINGS` / `DPMREAD_GUI_REPORT` set the ⚙ / report window
-//! starts open, and
+//! starts open (own OS windows, `popup.rs`: not in the screenshot, which
+//! holds the main window only), and
 //! `DPMREAD_GUI_STOP_AT=S` presses Stop S seconds after start.
 
 use std::path::PathBuf;

@@ -127,10 +127,10 @@ annotated copy of the image with the symbol outline and grid.
   status, file name, engine, decoded text and time, sortable, with a
   *failed only* filter;
 - detail pane: annotated image with zoom and pan, decoded text with *Copy*,
-  the full technical report;
-- toolbar: polarity, time budget, *all codes* (`--multi`); settings for
-  expected sizes, engines, exhaustive mode and worker threads (kept between
-  sessions);
+  the full technical report in its own window;
+- toolbar: polarity, time budget, *all codes* (`--multi`); a settings
+  window for expected sizes, engines, exhaustive mode and worker threads
+  (kept between sessions);
 - *Stop* ends the image being read and keeps the queue, *Continue* goes on;
   *Read again*, *Open folder* and *Copy path* per row;
 - export of the finished results as CSV (one line per symbol) or JSON;

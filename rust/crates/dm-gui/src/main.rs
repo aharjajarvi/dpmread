@@ -11,6 +11,7 @@ mod detail;
 mod displaylibs;
 mod export;
 mod inputs;
+mod popup;
 mod preview;
 mod settings;
 mod shot;
