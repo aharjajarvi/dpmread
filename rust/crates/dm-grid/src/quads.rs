@@ -2,6 +2,7 @@
 //! `_line_intersect`, `snap_quad`, `side_combos`, `expand_quad` (reader
 //! 962–1086, 1492–1500).
 
+use crate::deadline::Deadline;
 use crate::np::{norm2_f32, sum_f32};
 use crate::sampler::{Quad, order_quad};
 use dm_imgproc::contours::to_f32;
@@ -86,16 +87,35 @@ pub fn max_aspect(symbols: Option<&[Symbol]>) -> f64 {
 /// whole image. `min_area` is the smallest blob as a fraction of the image,
 /// `max_aspect` the longest blob (`max_aspect()`, Python: `PY_MAX_ASPECT`).
 pub fn candidate_quads(g: &Gray8, max_quads: usize, min_area: f64, max_aspect: f64) -> Vec<Quad> {
+    candidate_quads_until(g, max_quads, min_area, max_aspect, &Deadline::never())
+        .expect("no deadline")
+}
+
+/// `candidate_quads` that gives up between its passes once `deadline`
+/// expires (CORE-111): `None`, never a partial list.
+pub fn candidate_quads_until(
+    g: &Gray8,
+    max_quads: usize,
+    min_area: f64,
+    max_aspect: f64,
+    deadline: &Deadline,
+) -> Option<Vec<Quad>> {
     let (h, w) = (g.height, g.width);
     let m = h.min(w);
     let hw = (h * w) as f64;
     let flat = flatten_background(g, m as f64 / 8.0);
+    if deadline.expired() {
+        return None;
+    }
     let dark = gaussian_blur_u8(&flat, (m as f64 / 200.0).max(1.0)).map(|v| 255 - v);
     let mut quads: Vec<(f64, Quad)> = Vec::new();
     for pct in [65.0, 75.0, 85.0] {
         let p = percentile_u8(&dark, pct);
         let bw = dark.map(|v| if v as f64 > p { 255 } else { 0 });
         for frac in [0.03, 0.05, 0.08] {
+            if deadline.expired() {
+                return None;
+            }
             let k = odd(m as f64 * frac);
             let blob = open(&close(&bw, k), k);
             for c in find_contours_external(&blob) {
@@ -141,7 +161,7 @@ pub fn candidate_quads(g: &Gray8, max_quads: usize, min_area: f64, max_aspect: f
     // tight crops: the image itself may be (nearly) the symbol
     let (wf, hf) = ((w - 1) as f32, (h - 1) as f32);
     out.push([[0.0, 0.0], [wf, 0.0], [wf, hf], [0.0, hf]]);
-    out
+    Some(out)
 }
 
 /// Intersection of the lines `p1 + t d1` and `p2 + s d2` (float64, the 2x2

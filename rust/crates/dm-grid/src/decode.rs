@@ -7,7 +7,7 @@ use crate::nearmiss::{
     NearMiss, OUTSIDE_BUSY, interior_modules, near_miss_key, outside_dark, round2, size_agree,
 };
 use crate::np::norm2_f32;
-use crate::quads::{candidate_quads, expand_quad, side_combos, snap_quad};
+use crate::quads::{candidate_quads_until, expand_quad, side_combos, snap_quad};
 use crate::refine::refine_quad;
 use crate::rescue::rescue_fit;
 use crate::sampler::{Quad, Sampler, orientations, score_quads};
@@ -60,10 +60,17 @@ pub fn grid_decode(
 ) -> Option<GridRead> {
     let setup = Span::new(Stage::Setup);
     let sampler = Sampler::new(gray, 0.22);
+    // an expired deadline ends the job here as it would in the first
+    // `grid_pass` check: same result, without finishing detection (CORE-111)
     let mut rough: Vec<Quad> = extra_quads.to_vec();
-    rough.extend(candidate_quads(gray, MAX_QUADS, min_area, max_aspect));
+    rough.extend(candidate_quads_until(
+        gray, MAX_QUADS, min_area, max_aspect, deadline,
+    )?);
     let mut quads = Vec::with_capacity(2 * rough.len());
     for q in &rough {
+        if deadline.expired() {
+            return None;
+        }
         quads.push(snap_quad(gray, q, 2, false));
         quads.push(*q);
     }
@@ -100,6 +107,9 @@ pub fn grid_decode(
     let setup = Span::new(Stage::Setup);
     let mut quads2 = Vec::new();
     for (q, sq) in rough.iter().zip(quads.iter().step_by(2)) {
+        if deadline.expired() {
+            return None;
+        }
         quads2.extend(side_combos(sq, &snap_quad(gray, sq, 2, true), 3.0));
         quads2.push(snap_quad(gray, q, 2, true));
         quads2.push(*q);
