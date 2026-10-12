@@ -168,6 +168,12 @@ Build and run-time footprint:
 | Needs | glibc ≥ 2.28 (2018 distributions on); the GUI ships libxkbcommon(-x11) and libxcb-xkb (0.6 MB) | Windows 10 / 11, no Visual C++ Redistributable |
 | CPU | any x86-64; AVX2 / FMA used when present | same |
 
+Each [release](https://github.com/aharjajarvi/dpmread/releases) has one zip
+per platform, built by GitHub Actions from the version tag, with `LICENSE`,
+`NOTICE` and `THIRD_PARTY_LICENSES.md` (generated from the dependency tree,
+so every bundled crate and C/C++ library is listed), and a `SHA256SUMS`
+file for both zips.
+
 ## Benchmarks
 
 Three public sets, fetched and pinned by hash with
