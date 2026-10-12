@@ -190,7 +190,14 @@ mod tests {
                         // right column, counted from the bottom
                         (rg.rows - 1 - r) % 2 == 0
                     };
-                    assert_eq!(d, want, "{} region at ({}, {}): ({r}, {c})", sym.name(), rg.r0, rg.c0);
+                    assert_eq!(
+                        d,
+                        want,
+                        "{} region at ({}, {}): ({r}, {c})",
+                        sym.name(),
+                        rg.r0,
+                        rg.c0
+                    );
                 }
             }
         }
