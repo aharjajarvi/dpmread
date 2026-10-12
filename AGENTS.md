@@ -31,6 +31,12 @@ the Python readers are frozen references.
   same commit as a feature change.
 - `doc/roadmap.md` – what it does not do yet: planned, backlog, non-goals.
   Move an item to `features.md` when it lands.
+- `doc/gui.png` – the README screenshot: eight Karrach 2021 images
+  (`DMX2c_big`, `DMX2k`, `DMX2g`, `DMX2h`, `DMX2i`, `DMX2j`, `DMX3a`,
+  `DMX6g`), default settings, first line selected. Remake it after a
+  visible GUI change: run `dpmread-gui` on those files with
+  `XDG_CONFIG_HOME` set to an empty directory (default settings),
+  `DPMREAD_GUI_SCREENSHOT=doc/gui.png` and `DPMREAD_GUI_SELECT=0`.
 
 Detailed plans may exist outside this repository; a local, untracked
 `AGENTS.local.md` points to them if present.
