@@ -14,6 +14,7 @@ pub mod np;
 pub mod quads;
 pub mod quality;
 pub mod refine;
+pub mod regions;
 pub mod rescue;
 pub mod sampler;
 pub mod timing;
