@@ -2,6 +2,7 @@
 //! v2's `_warp_pass` (v2 1767–1817).
 
 use crate::deadline::Deadline;
+use crate::dots::{DOT_TEXTURE_MIN, disc_values, dot_texture};
 use crate::fit::{GridFit, Mode, try_fit, try_fit_values};
 use crate::nearmiss::{
     NearMiss, OUTSIDE_BUSY, interior_modules, near_miss_key, outside_dark, round2, size_agree,
@@ -9,6 +10,7 @@ use crate::nearmiss::{
 use crate::np::norm2_f32;
 use crate::quads::{candidate_quads_until, expand_quad, side_combos, snap_quad};
 use crate::refine::refine_quad;
+use crate::refine::tracked_axes;
 use crate::regions::region_values;
 use crate::rescue::rescue_fit;
 use crate::sampler::{Quad, Sampler, orientations, score_quads};
@@ -246,6 +248,9 @@ fn grid_pass(
             if let Some(r) = region_read(sampler, &fit, deadline, mirror, note) {
                 return Some(r);
             }
+            if let Some(r) = dot_read(sampler, &fit, deadline, mirror, note) {
+                return Some(r);
+            }
             if rs_ >= strong {
                 let mut imgs: Vec<(String, &Gray8)> = vec![("same image".to_string(), gray)];
                 imgs.extend(alt_images.iter().map(|(n, i)| (n.clone(), *i)));
@@ -396,6 +401,53 @@ fn region_read(
                 mirrored,
                 note: format!("region anchors, {} threshold{note}", mode.name()),
             });
+        }
+    }
+    None
+}
+
+/// One more candidate for dot-peen / laser-dot marks: modules sampled with
+/// a disc matched filter of the measured dot size (CORE-104), on the even
+/// and the timing-tracked grid. Only when the finder line is dotted.
+fn dot_read(
+    sampler: &Sampler,
+    fit: &GridFit,
+    deadline: &Deadline,
+    mirrored: bool,
+    note: &str,
+) -> Option<GridRead> {
+    let g = fit.geom;
+    let (dip, radius) = dot_texture(sampler, &fit.quad, g);
+    if dip < DOT_TEXTURE_MIN || deadline.expired() {
+        return None;
+    }
+    let even: (Vec<f64>, Vec<f64>) = (
+        (0..g.cols).map(|c| c as f64 + 0.5).collect(),
+        (0..g.rows).map(|r| r as f64 + 0.5).collect(),
+    );
+    let tracked = match &fit.axes {
+        Some(a) => a.clone(),
+        None => tracked_axes(sampler, &fit.quad, g),
+    };
+    let mut rf = fit.clone();
+    for (axes, how) in [(&even, ""), (&tracked, ", timing-tracked grid")] {
+        if deadline.expired() {
+            return None;
+        }
+        let vals = disc_values(sampler, &fit.quad, g.rows, g.cols, &axes.0, &axes.1, radius);
+        for mode in [Mode::Plane, Mode::Local] {
+            if let Some((rs, dec)) = try_fit_values(&mut rf, mode, vals.clone()) {
+                return Some(GridRead {
+                    fit: rf,
+                    rs,
+                    dec,
+                    mirrored,
+                    note: format!(
+                        "dot filter (radius {radius:.2} module), {} threshold{how}{note}",
+                        mode.name()
+                    ),
+                });
+            }
         }
     }
     None
