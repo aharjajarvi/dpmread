@@ -1,0 +1,91 @@
+# CI for the Rust reader: the public part of rust/tools/ci.sh. Tests that
+# need the maintainer's private test data are #[ignore]d and do not run
+# here; the public benchmark sets are compared against baseline/.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  licences:
+    name: cargo deny, third-party licences
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2,cargo-about@0.8.4
+      - run: cargo deny check
+      - name: THIRD_PARTY_LICENSES.md up to date
+        run: |
+          cargo about generate --fail about.hbs -o "$RUNNER_TEMP/THIRD_PARTY_LICENSES.md"
+          diff -u ../THIRD_PARTY_LICENSES.md "$RUNNER_TEMP/THIRD_PARTY_LICENSES.md"
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal -c rustfmt,clippy && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # fixture tests are #[ignore]d (private data); the list shows what ran
+      - run: cargo test --workspace --locked
+      - run: cargo build --release --locked -p dm-cli -p dm-gui
+      - name: no C/C++ run-time DLL
+        if: runner.os == 'Windows'
+        run: python tools/check_dlls.py target/release/dpmread.exe target/release/dpmread-gui.exe
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v6
+        with:
+          path: testimages_public
+          key: public-sets-${{ hashFiles('tools/public_sets.lock.json') }}
+      - name: fetch public sets
+        working-directory: .
+        run: |
+          python -m pip install --quiet pillow
+          python tools/fetch_public_sets.py
+      - name: public sets vs baseline/public_rust.json
+        working-directory: .
+        run: |
+          python tools/score_public.py --reader rust --save "$RUNNER_TEMP/public_rust.json"
+          python tools/score_public.py --compare baseline/public_rust.json "$RUNNER_TEMP/public_rust.json"
+      # 30+ min on a hosted runner: nightly and manual runs only
+      - name: public sets --multi vs baseline/public_rust_multi.json
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        working-directory: .
+        run: |
+          python tools/score_public.py --reader rust --multi --save "$RUNNER_TEMP/public_rust_multi.json"
+          python tools/score_public.py --compare baseline/public_rust_multi.json "$RUNNER_TEMP/public_rust_multi.json"

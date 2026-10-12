@@ -1,0 +1,57 @@
+name: Image not decoded
+description: A Data Matrix symbol that dpmread does not read, or reads wrong
+labels: ["unreadable image"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Unreadable images are the most useful input for improving the reader.
+        **Only attach images you have the right to share. Do not attach marks that encode
+        confidential production data** (serial, customer or order numbers).
+  - type: textarea
+    id: image
+    attributes:
+      label: Image
+      description: Attach the original file (camera JPEG, PNG or BMP at full resolution; not a screenshot or a re-compressed copy).
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Expected text
+      description: What the symbol should decode to, if known. Leave empty if unknown.
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happened
+      options:
+        - Not decoded
+        - Decoded with wrong text
+        - Decoded, but very slow
+    validations:
+      required: true
+  - type: input
+    id: mark
+    attributes:
+      label: Mark and material
+      description: e.g. "laser on birch end grain", "dot peen on steel", "ink jet on cardboard"
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: Output of `--version`, and Windows / Linux distribution.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Reader output
+      description: The text report or `--json` output (optional).
+      render: text
+  - type: checkboxes
+    id: licence
+    attributes:
+      label: Permission
+      options:
+        - label: I have the right to share this image, and it may be used as test data under CC BY 4.0.
+          required: true

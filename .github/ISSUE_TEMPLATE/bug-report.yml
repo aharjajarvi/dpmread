@@ -1,0 +1,23 @@
+name: Bug report
+description: A crash, wrong output format, GUI problem or build failure
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: Output of `--version`, and Windows / Linux distribution (or "built from source at <commit>").
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Output or error message
+      render: text

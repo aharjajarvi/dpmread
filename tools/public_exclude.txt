@@ -1,0 +1,4 @@
+# Paths of the tracked tree that tools/export_public.sh leaves out of the
+# public export. One path or glob per line, relative to the repo root.
+AGENTS.local.md
+CLAUDE.local.md

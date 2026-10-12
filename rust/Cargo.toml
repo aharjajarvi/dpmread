@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+repository = "https://github.com/aharjajarvi/dpmread"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true
+panic = "abort"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# ci.sh --fast: release code, but quick to rebuild (no LTO, parallel codegen)
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# image fixture tests run whole photos through the ops
+[profile.test]
+opt-level = 2
+
+[profile.dev.package."*"]
+opt-level = 2

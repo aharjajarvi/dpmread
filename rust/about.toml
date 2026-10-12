@@ -1,0 +1,31 @@
+# cargo-about: generates ../THIRD_PARTY_LICENSES.md from about.hbs
+# (rust/tools/ci.sh checks that the committed file is current).
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "MPL-2.0",
+]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
+no-clearly-defined = true
+workarounds = ["ring"]
+# the workspace crates (publish = false) are this project, not third party
+private = { ignore = true }
+
+# dual Apache-2.0 / GPL-2.0-only: Apache-2.0 chosen; the GPL file confuses the scan
+[self_cell.clarify]
+license = "Apache-2.0"
+[[self_cell.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"

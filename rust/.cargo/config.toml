@@ -1,0 +1,11 @@
+# Windows MSVC: static C/C++ run-time, so dpmread.exe / dpmread-gui.exe run on
+# a clean Windows without the VC++ redistributable. No CPU flags: releases
+# target baseline x86-64.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+# Same run-time for the C/C++ libraries built by cmake-rs (zxing-cpp,
+# libjpeg-turbo); cmake-rs reads the target-specific name, so Linux builds
+# (and build_linux.sh's own toolchain file) are unaffected.
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = "tools/msvc-crt.cmake", relative = true }

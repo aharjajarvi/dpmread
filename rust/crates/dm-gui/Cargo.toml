@@ -1,0 +1,38 @@
+[package]
+name = "dm-gui"
+description = "Drag-and-drop Data Matrix reader GUI."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dpmread-gui"
+path = "src/main.rs"
+
+[dependencies]
+dm-imgproc = { path = "../dm-imgproc" }
+dm-reader = { path = "../dm-reader" }
+dm-symbol = { path = "../dm-symbol" }
+# glow (OpenGL) instead of the default wgpu: smaller binary, enough for a table
+# and one image
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui_extras = { version = "0.36", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "wayland"] }
+directories = "6"
+serde.workspace = true
+serde_json.workspace = true
+
+# wgpu as fallback when glow fails: a Windows PC without an OpenGL 2 driver
+# (VM without 3D acceleration, some RDP sessions) has only GDI OpenGL 1.1,
+# while Direct3D 12 always works (WARP software renderer at worst)
+[target.'cfg(windows)'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["wgpu"] }
+
+# X11 backend selection (winit 0.30 has no file drop on Wayland)
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["x11"] }
+# dlopen check of the display libraries before start (displaylibs.rs)
+libc = "0.2"

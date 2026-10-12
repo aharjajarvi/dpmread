@@ -1,0 +1,6 @@
+# Python reference readers and generator (python/). Optional: pylibdmtx
+# (needs the system libdmtx) for the libdmtx engine of datamatrix_reader.py.
+numpy
+opencv-python
+zxing-cpp
+Pillow

@@ -1,0 +1,23 @@
+[package]
+name = "dm-imgproc"
+description = "Gray image type and the OpenCV operations the reader needs."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["turbojpeg"]
+# JPEG through libjpeg-turbo (bundled, built with cmake), the decoder OpenCV
+# uses: bit-identical pixels. Without it the `image` crate (zune-jpeg)
+# decodes JPEGs, which differs by a few grey levels on some pixels.
+turbojpeg = ["dep:turbojpeg"]
+
+[dependencies]
+turbojpeg = { version = "1.5", default-features = false, features = ["cmake"], optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff", "webp", "gif"] }
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true

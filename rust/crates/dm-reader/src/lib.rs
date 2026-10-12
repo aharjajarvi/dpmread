@@ -1,0 +1,30 @@
+//! Enhancement ladder, zxing wrapper, job runner and read results.
+
+pub mod annotate;
+pub mod charset;
+pub mod multi;
+pub mod read;
+pub mod report;
+pub mod runner;
+pub mod variants;
+pub mod zxing;
+
+pub use dm_grid::timing;
+
+pub use annotate::{annotated, save_annotated, save_variants};
+pub use charset::to_text;
+pub use read::{
+    Engines, IMAGE_EXT, Polarity, Progress, ReadNearMiss, ReadOptions, ReadResult, Timings,
+    collect_inputs, fit_quad, parse_sizes, read_image,
+};
+pub use report::{
+    hex_spaced, hexrows, matrix_art, printable, py_float, report_text, to_dict, to_json,
+};
+pub use runner::{JOB_GRACE_S, Runner, StopHandle, default_jobs};
+pub use variants::{
+    Quad, Variant, enhancement_variants, grid_variants, inverted_chain, map_quad, tile_axis,
+    tile_variants,
+};
+#[cfg(feature = "zxing")]
+pub use zxing::zxing_read;
+pub use zxing::{ZXING_AVAILABLE, ZxInfo, ZxRead, binary};

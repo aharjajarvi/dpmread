@@ -1,0 +1,37 @@
+[package]
+name = "dm-reader"
+description = "Enhancement ladder, zxing wrapper, job runner and read results."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["zxing"]
+# zxing-cpp 0.5.1 bundles zxing-cpp C++ 3.0.2 (0.5.0 with 3.0.0 is yanked);
+# Python reference: python-zxing-cpp 3.0.0. No DataMatrix code differs.
+zxing = ["dep:zxingcpp"]
+
+[dependencies]
+dm-codec = { path = "../dm-codec" }
+dm-ecc = { path = "../dm-ecc" }
+dm-grid = { path = "../dm-grid" }
+dm-imgproc = { path = "../dm-imgproc" }
+dm-symbol = { path = "../dm-symbol" }
+encoding_rs = "0.8.42"
+# PNG output of --debug
+image = { version = "0.25", default-features = false, features = ["png"] }
+rayon = "1.12"
+# JSON output keeps Python's key order
+serde_json = { workspace = true, features = ["preserve_order"] }
+# keyed by its library name: cargo-about drops a dependency whose key differs from it
+zxingcpp = { package = "zxing-cpp", version = "=0.5.1", features = ["bundled"], optional = true }
+
+[dev-dependencies]
+serde.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+[[example]]
+name = "zxing_spike"
+required-features = ["zxing"]

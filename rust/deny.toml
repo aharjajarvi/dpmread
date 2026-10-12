@@ -1,0 +1,47 @@
+# cargo-deny: rust/tools/ci.sh runs `cargo deny check` (licences, bans,
+# sources; advisories need the network and run with --advisories).
+[graph]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # paste: unmaintained, no known vulnerability; a build-time macro of the
+    # pinned zxing-cpp 0.5.1 crate, gone when that dependency moves on
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained build-time macro of zxing-cpp 0.5.1" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+]
+# Outside the allowlist, accepted per crate (texts in THIRD_PARTY_LICENSES.md)
+exceptions = [
+    # Windows clipboard (egui); permissive, no notice needed in binaries
+    { allow = ["BSL-1.0"], crate = "clipboard-win" },
+    { allow = ["BSL-1.0"], crate = "error-code" },
+    # GUI fonts embedded in dpmread-gui; embedding allowed with the licence
+    { allow = ["OFL-1.1", "Ubuntu-font-1.0"], crate = "epaint_default_fonts" },
+    # file-level copyleft; used unmodified, source on crates.io
+    { allow = ["MPL-2.0"], crate = "option-ext" },
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

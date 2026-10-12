@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Backups / editor
+*.bak
+*.orig
+*~
+*.swp
+.vscode/
+.idea/
+
+# Third-party binaries (analysis input, not redistributable)
+*.apk
+
+# Debug output (--debug DIR)
+debug/
+out/
+
+# Rust build output
+rust/target/
+
+# Public benchmark sets (fetch: python tools/fetch_public_sets.py)
+testimages_public/
+
+# Generator output (python/datamatrix_gen.py default file)
+/datamatrix.png

@@ -1,0 +1,10 @@
+[package]
+name = "dm-gen"
+description = "Data Matrix generator (phase 7, optional)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
