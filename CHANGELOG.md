@@ -12,6 +12,16 @@ versions may change command-line flags and the JSON output.
 - `dm-ffi`: the reader as a library for Android apps (Kotlin bindings
   through uniffi), with `rust/tools/build_android.sh`; JSON identical to
   `--json`. Not in the release zips.
+- `--no-analysis` (and `analyse` in `dm-ffi` options): after a zxing
+  read, skip the grid fit that fills in the symbol, error-correction and
+  quality fields.
+
+### Changed
+
+- After a zxing read, the grid fit for the report tries the zxing outline
+  alone before full detection, runs its attempts in parallel and stops
+  after 2 s in total (was up to 8 s for each of 7 attempts). Public sets:
+  same results, 186 → 107 s in total, slowest image 30 → 12 s.
 
 ## [0.2.0] – 2026-10-13
 

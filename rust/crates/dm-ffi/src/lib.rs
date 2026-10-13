@@ -32,6 +32,10 @@ pub struct Options {
     pub polarity: Polarity,
     /// Read every symbol of the image (`--multi`).
     pub multi: bool,
+    /// After a zxing read, fit the grid for the module matrix, RS
+    /// statistics and grades; `false` (`--no-analysis`) is faster, same text.
+    #[uniffi(default = true)]
+    pub analyse: bool,
 }
 
 /// One read symbol: the first, then the further ones of a `multi` read.
@@ -92,6 +96,7 @@ pub fn default_options() -> Options {
         expect: Vec::new(),
         polarity: Polarity::Any,
         multi: false,
+        analyse: true,
     }
 }
 
@@ -175,6 +180,7 @@ fn to_read_options(o: &Options) -> dm_reader::ReadOptions {
         debug_dir: None,
         multi: o.multi,
         progress: None,
+        analyse: o.analyse,
     }
 }
 

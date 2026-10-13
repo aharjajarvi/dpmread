@@ -185,16 +185,19 @@ Measured on an AMD Ryzen 7 5700X (8 cores, 16 threads), Linux, default
 options, 60 s budget, over the 193 images of the [public test
 sets](#benchmarks):
 
-| | dpmread 0.2 (Rust) | Python reference (v2) |
+| | dpmread (Rust, `main` 2026-10-13) | Python reference (v2) |
 |---|---|---|
-| Total time (sum over images) | 168 s | 772 s |
-| Median per image | 0.46 s | 0.93 s |
-| 90th percentile per image | 0.60 s | 2.68 s |
-| Slowest image | 30 s | 57 s |
+| Total time (sum over images) | 107 s | 772 s |
+| Median per image | 0.28 s | 0.93 s |
+| 90th percentile per image | 0.40 s | 2.68 s |
+| Slowest image | 12 s | 57 s |
 
 Most images are read by the library pass in well under a second. The time
 goes into images that need the grid decoder; those take seconds to tens of
-seconds and stop at the budget if nothing decodes. On the project's own set
+seconds and stop at the budget if nothing decodes. After a library read,
+the grid fit that fills in the symbol, error-correction and quality fields
+gets at most 2 s; `--no-analysis` skips it (same text, those fields
+absent). On the project's own set
 of hard wood marks, the Rust reader is about 5.6 times faster than the
 Python reference with identical results.
 

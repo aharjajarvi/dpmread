@@ -22,7 +22,9 @@ pub mod timing;
 pub mod warp;
 
 pub use crate::deadline::Deadline;
-pub use crate::decode::{GridRead, MAX_QUADS, NO_QZ_STRONG_FACTOR, STRONG_FIT, grid_decode};
+pub use crate::decode::{
+    GridRead, MAX_QUADS, NO_QZ_STRONG_FACTOR, STRONG_FIT, grid_decode, grid_decode_seeds,
+};
 pub use crate::fit::{
     GridFit, Mode, classify, codewords_from_bits, plausible, try_fit, try_fit_values, zscore,
 };

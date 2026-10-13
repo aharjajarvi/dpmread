@@ -59,6 +59,44 @@ pub fn grid_decode(
     max_aspect: f64,
     qz_modes: &[bool],
     symbols: Option<&[Symbol]>,
+    diag: Option<&mut Option<NearMiss>>,
+) -> Option<GridRead> {
+    let detect = Some((min_area, max_aspect));
+    decode_quads(
+        gray,
+        deadline,
+        extra_quads,
+        alt_images,
+        detect,
+        qz_modes,
+        symbols,
+        diag,
+    )
+}
+
+/// `grid_decode` on the given quads only, without `candidate_quads`: the
+/// cheap first try when another decoder already located the symbol.
+pub fn grid_decode_seeds(
+    gray: &Gray8,
+    deadline: &Deadline,
+    quads: &[Quad],
+    qz_modes: &[bool],
+    symbols: Option<&[Symbol]>,
+) -> Option<GridRead> {
+    decode_quads(gray, deadline, quads, &[], None, qz_modes, symbols, None)
+}
+
+/// `grid_decode` body; `detect` = `(min_area, max_aspect)` of
+/// `candidate_quads`, `None` for the extra quads alone.
+#[allow(clippy::too_many_arguments)]
+fn decode_quads(
+    gray: &Gray8,
+    deadline: &Deadline,
+    extra_quads: &[Quad],
+    alt_images: &[(String, &Gray8)],
+    detect: Option<(f64, f64)>,
+    qz_modes: &[bool],
+    symbols: Option<&[Symbol]>,
     mut diag: Option<&mut Option<NearMiss>>,
 ) -> Option<GridRead> {
     let setup = Span::new(Stage::Setup);
@@ -66,9 +104,11 @@ pub fn grid_decode(
     // an expired deadline ends the job here as it would in the first
     // `grid_pass` check: same result, without finishing detection (CORE-111)
     let mut rough: Vec<Quad> = extra_quads.to_vec();
-    rough.extend(candidate_quads_until(
-        gray, MAX_QUADS, min_area, max_aspect, deadline,
-    )?);
+    if let Some((min_area, max_aspect)) = detect {
+        rough.extend(candidate_quads_until(
+            gray, MAX_QUADS, min_area, max_aspect, deadline,
+        )?);
+    }
     let mut quads = Vec::with_capacity(2 * rough.len());
     for q in &rough {
         if deadline.expired() {

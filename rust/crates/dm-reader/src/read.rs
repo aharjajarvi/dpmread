@@ -12,7 +12,8 @@ use dm_codec::Decoded;
 use dm_ecc::RSResult;
 use dm_grid::timing::{self, Acc};
 use dm_grid::{
-    Deadline, GridFit, GridRead, NearMiss, Quality, grid_decode, max_aspect, near_miss_key, quality,
+    Deadline, GridFit, GridRead, NearMiss, Quality, grid_decode, grid_decode_seeds, max_aspect,
+    near_miss_key, quality,
 };
 use dm_imgproc::{Bgr8, Gray8, LoadError, bgr_to_gray, load_image};
 use dm_symbol::{Symbol, all_symbols};
@@ -34,8 +35,8 @@ pub const IMAGE_EXT: [&str; 8] = [
 /// Grid time cap per job on a whole-image variant and on a tile.
 const GRID_CAP_S: f64 = 25.0;
 const TILE_CAP_S: f64 = 10.0;
-/// `analyse_known` time per grid attempt.
-const ANALYSE_S: f64 = 8.0;
+/// `analyse_known` time for all its grid attempts together.
+const ANALYSE_S: f64 = 2.0;
 
 /// Mark polarity (`--polarity`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -82,6 +83,9 @@ pub struct ReadOptions {
     pub multi: bool,
     /// Called after each consumed job (GUI progress); does not change the read.
     pub progress: Option<Progress>,
+    /// After a zxing read, fit the grid at its position for the module
+    /// matrix, RS statistics and grades (`analyse_known`); `false` skips it.
+    pub analyse: bool,
 }
 
 /// Progress callback of `read_image`: `(stage, jobs done, jobs in stage)`
@@ -117,6 +121,7 @@ impl Default for ReadOptions {
             debug_dir: None,
             multi: false,
             progress: None,
+            analyse: true,
         }
     }
 }
@@ -635,8 +640,9 @@ fn read_bgr(
             if let Some(v) = by_name.get(&res.variant) {
                 res.quad = Some(orig_quad(&quad, v.scale, v.ox, v.oy));
             }
-            if opts.engines.grid {
-                analyse_known(&mut res, &by_name, &quad, &gray_orig, expect);
+            if opts.engines.grid && opts.analyse {
+                let dl = deadline.min(Instant::now() + Duration::from_secs_f64(ANALYSE_S));
+                analyse_known(&mut res, &by_name, &quad, &gray_orig, expect, runner, dl);
             }
         }
     }
@@ -667,13 +673,19 @@ fn job_timed<R>(busy: &AtomicU64, f: impl FnOnce() -> R) -> (R, Acc) {
 }
 
 /// A library decoded the symbol: run the grid decoder at its position to
-/// recover module matrix, codewords and RS statistics for the report.
+/// recover module matrix, codewords and RS statistics for the report. The
+/// zxing variant and up to 6 others, first on the zxing quad alone, then
+/// with full detection; the attempts run as jobs and the first one in that
+/// order with the same data wins. All of them end at `deadline`.
+#[allow(clippy::too_many_arguments)]
 fn analyse_known(
     res: &mut ReadResult,
     by_name: &ByName,
     quad: &Quad,
     gray_orig: &Gray8,
     expect: Option<&[Symbol]>,
+    runner: &Runner,
+    deadline: Instant,
 ) {
     let Some(v) = by_name.get(&res.variant) else {
         return;
@@ -689,35 +701,43 @@ fn analyse_known(
         let prefix = format!("{} > ", v.name.split(" > ").next().unwrap_or(""));
         others.sort_by_key(|x| !x.name.starts_with(&prefix));
     }
-    for gv in std::iter::once(v).chain(others.into_iter().take(6)) {
-        let q = grid_quad(&map_quad(quad, v, gv));
-        let dl = Deadline::at(Instant::now() + Duration::from_secs_f64(ANALYSE_S));
-        let r = grid_decode(
-            &gv.img,
-            &dl,
-            &[q],
-            &[],
-            min_area(gv),
-            max_aspect(expect),
-            &[true, false],
-            expect,
-            None,
-        );
-        if let Some(r) = r
-            && r.dec.data == res.data
-        {
-            res.quality = Some(quality(gray_orig, &r.fit, gv.scale, &r.rs, (gv.ox, gv.oy)));
-            res.fit = Some(r.fit);
-            res.rs = Some(r.rs);
-            res.dec = Some(r.dec);
-            res.mirrored = r.mirrored;
-            res.sampling = r.note;
-            res.scale = gv.scale;
-            res.ox = gv.ox;
-            res.oy = gv.oy;
-            return;
+    let cands: Vec<&Variant> = std::iter::once(v)
+        .chain(others.into_iter().take(6))
+        .collect();
+    let jobs: Vec<(bool, &Variant)> = [true, false]
+        .iter()
+        .flat_map(|&seeds_only| cands.iter().map(move |&gv| (seeds_only, gv)))
+        .collect();
+    let dl = Deadline {
+        at: Some(deadline),
+        abort: Some(runner.abort_flag()),
+    };
+    let attempt = |&(seeds_only, gv): &(bool, &Variant)| {
+        let q = [grid_quad(&map_quad(quad, v, gv))];
+        let modes = [true, false];
+        if seeds_only {
+            grid_decode_seeds(&gv.img, &dl, &q, &modes, expect)
+        } else {
+            let (area, aspect) = (min_area(gv), max_aspect(expect));
+            grid_decode(&gv.img, &dl, &q, &[], area, aspect, &modes, expect, None)
         }
-    }
+    };
+    runner.run(&jobs, Some(deadline), attempt, |i, r| {
+        let gv = jobs[i].1;
+        let Some(r) = r.filter(|r| r.dec.data == res.data) else {
+            return ControlFlow::Continue(());
+        };
+        res.quality = Some(quality(gray_orig, &r.fit, gv.scale, &r.rs, (gv.ox, gv.oy)));
+        res.fit = Some(r.fit);
+        res.rs = Some(r.rs);
+        res.dec = Some(r.dec);
+        res.mirrored = r.mirrored;
+        res.sampling = r.note;
+        res.scale = gv.scale;
+        res.ox = gv.ox;
+        res.oy = gv.oy;
+        ControlFlow::Break(())
+    });
 }
 
 /// Quad of a grid fit in variant pixels, as the reader's quad type.
