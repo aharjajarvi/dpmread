@@ -166,11 +166,14 @@ impl Settings {
 
     /// The ⚙ window: everything, applied to images added from now on.
     pub fn window(&mut self, ctx: &egui::Context, open: &mut bool) {
-        egui::Window::new("Settings")
-            .open(open)
-            .resizable(false)
-            .collapsible(false)
-            .show(ctx, |ui| {
+        crate::popup::popup(
+            ctx,
+            "settings",
+            "Settings – dpmread",
+            [460.0, 300.0],
+            false,
+            open,
+            |ui| {
                 egui::Grid::new("settings_grid")
                     .num_columns(2)
                     .spacing([12.0, 6.0])
@@ -240,7 +243,8 @@ impl Settings {
                     }
                     ui.weak("applies to images not read yet");
                 });
-            });
+            },
+        );
     }
 }
 

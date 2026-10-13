@@ -188,12 +188,14 @@ fn report_window(
     sym: Option<&ReadResult>,
     open: &mut bool,
 ) {
-    egui::Window::new(format!("Technical report – {}", row.name()))
-        .id(egui::Id::new("technical_report"))
-        .open(open)
-        .resizable(true)
-        .default_size([760.0, 600.0])
-        .show(ctx, |ui| {
+    crate::popup::popup(
+        ctx,
+        "technical_report",
+        &format!("Technical report – {}", row.name()),
+        [760.0, 600.0],
+        true,
+        open,
+        |ui| {
             ui.horizontal(|ui| {
                 if ui
                     .button("Copy report")
@@ -219,5 +221,6 @@ fn report_window(
                             .extend(),
                     );
                 });
-        });
+        },
+    );
 }
