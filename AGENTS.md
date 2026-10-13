@@ -119,6 +119,27 @@ python tools/score_public.py --reader rust --multi --save /tmp/public_rust_multi
 python tools/score_public.py --compare baseline/public_rust_multi.json /tmp/public_rust_multi.json
 ```
 
+## Changes to `main`
+
+`main` is protected by a ruleset: no direct pushes, no force pushes, no
+deletion. Every change goes through a pull request:
+
+| Step | Rule |
+|---|---|
+| Branch | One branch per change, from an up-to-date `main` |
+| Before pushing | `rust/tools/ci.sh` as in [Regression check](#regression-check) |
+| Pull request | Required checks: `test (ubuntu-24.04)`, `test (windows-latest)`, `cargo deny, third-party licences` (job names in `.github/workflows/ci.yml`; renaming a job means updating the ruleset) |
+| Merge | Squash or rebase, only when all three checks pass (Windows ~30 min); linear history. Agents merge only when asked |
+| Releases | Tag `v*` on `main` after the merge; `release.yml` builds a draft release |
+
+```fish
+git switch -c <branch> main
+git push -u origin <branch>
+gh pr create --fill
+gh pr checks --watch
+gh pr merge --squash --delete-branch
+```
+
 ## Conventions
 
 Rust (`rust/`):
