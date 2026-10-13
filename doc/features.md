@@ -2,7 +2,7 @@
 
 What dpmread does today, how it does it, how fast it is and how well it
 reads. Planned work is in [roadmap.md](roadmap.md). Figures are for
-version 0.1 and are updated with each release.
+version 0.2 and are updated with each release.
 
 ## Contents
 
@@ -24,13 +24,15 @@ flowchart TD
     zx -- no read --> gv["grid decoder on grey variants and unread tiles:<br/>candidate quads, grid fit on finder / timing pattern"]
     zx -. failed outlines as candidates .-> gv
     gv --> rs["sample with confidence,<br/>Reed-Solomon with erasures"]
-    rs -- "fails, strong fit" --> resc["rescue sampling"]
-    rs -- "fails, weak fit" --> warp
+    rs -- fails --> ex["per-region fit (multi-region symbols),<br/>dot filter (dot marks)"]
+    ex -- "fails, strong fit" --> resc["rescue sampling"]
+    ex -- "fails, weak fit" --> warp
     resc -- fails --> warp["warped grid"]
     warp -- fails --> qz["fit, sampling, rescue again<br/>without the quiet zone"]
     qz -- fails --> nm([near miss report])
     zx -- read --> res([decoded text])
     rs -- read --> res
+    ex -- read --> res
     resc -- read --> res
     warp -- read --> res
     qz -- read --> res
@@ -63,6 +65,15 @@ flowchart TD
      **erasures**. An erasure costs half as much correction capacity as an
      unknown error, so this repairs up to twice as much damage when the
      uncertain modules are the damaged ones;
+   - if that fails on a symbol with several data regions (from 32×32,
+     rectangles from 8×32, DMRE), every region is **re-fitted on its own
+     alignment lines** (the solid and dashed lines around it) and sampled
+     with its own perspective, which follows a bend or pitch drift inside
+     the symbol;
+   - if that fails and the solid finder line shows **separate dots** (the
+     darkness dips between modules), every module is sampled with a
+     **disc filter** of the measured dot size instead of a point
+     footprint, for dot-peen and laser-dot marks with gaps between dots;
    - if that fails, **rescue sampling**: a local threshold plane fitted to
      the fixed-pattern modules, 5×5 neighbourhood thresholds, and voting
      over several re-samplings and gamma values;
@@ -157,25 +168,25 @@ Measured on an AMD Ryzen 7 5700X (8 cores, 16 threads), Linux, default
 options, 60 s budget, over the 193 images of the [public test
 sets](#benchmarks):
 
-| | dpmread 0.1 (Rust) | Python reference (v2) |
+| | dpmread 0.2 (Rust) | Python reference (v2) |
 |---|---|---|
-| Total time (sum over images) | 186 s | 772 s |
-| Median per image | 0.50 s | 0.93 s |
-| 90th percentile per image | 0.72 s | 2.68 s |
+| Total time (sum over images) | 168 s | 772 s |
+| Median per image | 0.46 s | 0.93 s |
+| 90th percentile per image | 0.60 s | 2.68 s |
 | Slowest image | 30 s | 57 s |
 
 Most images are read by the library pass in well under a second. The time
 goes into images that need the grid decoder; those take seconds to tens of
 seconds and stop at the budget if nothing decodes. On the project's own set
-of hard wood marks, the Rust reader is about 4.6 times faster than the
+of hard wood marks, the Rust reader is about 5.6 times faster than the
 Python reference with identical results.
 
 Build and run-time footprint:
 
 | | Linux x86-64 | Windows x64 |
 |---|---|---|
-| CLI binary | 5.1 MB | 6.9 MB |
-| GUI binary | 12.7 MB | 16.9 MB |
+| CLI binary | 5.1 MB | 7.0 MB |
+| GUI binary | 12.7 MB | 17.1 MB |
 | Needs | glibc ≥ 2.28 (2018 distributions on); the GUI ships libxkbcommon(-x11) and libxcb-xkb (0.6 MB) | Windows 10 / 11, no Visual C++ Redistributable |
 | CPU | any x86-64; AVX2 / FMA used when present | same |
 
@@ -206,8 +217,8 @@ budget:
 
 | Reader | Hits (images) | False reads | Code level, default | Code level, `--multi` |
 |---|---|---|---|---|
-| dpmread 0.1 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **97.6 %** |
-| dpmread 0.1, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
+| dpmread 0.2 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **97.6 %** |
+| dpmread 0.2, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
 | Python reference v1 / v2 | 181 / 191 (94.8 %) | 1 | 73.9 % | – |
 
 Two of the 193 images have no ground truth and are not scored. The

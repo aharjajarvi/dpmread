@@ -47,7 +47,7 @@ and the zxing / zxing-cpp test samples), one symbol per image, 60 s budget:
 
 | Reader | Images decoded | False reads |
 |---|---|---|
-| dpmread 0.1 | **188 / 191** (98.4 %) | 0 |
+| dpmread 0.2 | **188 / 191** (98.4 %) | 0 |
 | Python reference reader in this repo | 181 / 191 (94.8 %) | 1 |
 
 How the sets are fetched and scored, and a comparison with zxing-cpp alone:

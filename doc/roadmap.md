@@ -13,15 +13,6 @@ Next, in rough order.
   non-flat symbols that uses the internal alignment patterns, and an
   optional denoising pass. Why: better reads on large curved marks, more
   images read by the fast pass.
-- **Alignment-pattern anchors in the warped grid.** Symbols from 32×32 up
-  have several data regions separated by solid / alternating alignment
-  lines. Today the grid inside the symbol is extrapolated from the outer
-  edges; tracking the alignment lines as well would anchor every region.
-  Why: large marks on curved or stretched material.
-- **Round-dot matched filter.** Detect the dot size of dot-peen and laser
-  dot marks from the finder pattern and sample each module with a filter
-  shaped like one dot. Why: dot marks where the dots do not touch read
-  poorly with square sampling.
 - **Faster failure.** Stop earlier on images that clearly hold no symbol or
   only a destroyed one, instead of using the whole budget.
 
