@@ -10,6 +10,7 @@ version 0.2 and are updated with each release.
 - [Supported symbols and data](#supported-symbols-and-data)
 - [Output](#output)
 - [Desktop GUI](#desktop-gui)
+- [Library for apps](#library-for-apps)
 - [Performance](#performance)
 - [Benchmarks](#benchmarks)
 - [Known limits](#known-limits)
@@ -161,6 +162,22 @@ annotated copy of the image with the symbol outline and grid.
 
 The GUI uses OpenGL 2; on Windows without an OpenGL 2 driver (virtual
 machines, remote desktop) it switches to Direct3D 12.
+
+## Library for apps
+
+`dm-ffi` (`rust/crates/dm-ffi`) makes the reader callable from Kotlin
+through [uniffi](https://github.com/mozilla/uniffi-rs), for Android apps:
+
+- `Reader(jobs)` with `read(path, options)`: the same JSON object per image
+  as `--json`, the technical report, and per symbol the decoded text, its
+  outline in image pixels and the sampled module matrix;
+- `stop()` ends a running read from another thread;
+- options as the command-line flags that affect a read (engines, budget,
+  expected sizes, polarity, exhaustive, all codes).
+
+`rust/tools/build_android.sh` builds `libdm_ffi.so` for `arm64-v8a` and
+`x86_64` (Android 8, API 26, and later) and the Kotlin bindings. Not part
+of the release zips.
 
 ## Performance
 

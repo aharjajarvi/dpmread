@@ -7,6 +7,12 @@ versions may change command-line flags and the JSON output.
 
 ## [Unreleased]
 
+### Added
+
+- `dm-ffi`: the reader as a library for Android apps (Kotlin bindings
+  through uniffi), with `rust/tools/build_android.sh`; JSON identical to
+  `--json`. Not in the release zips.
+
 ## [0.2.0] – 2026-10-13
 
 ### Added
