@@ -9,6 +9,7 @@ use crate::nearmiss::{
 use crate::np::norm2_f32;
 use crate::quads::{candidate_quads_until, expand_quad, side_combos, snap_quad};
 use crate::refine::refine_quad;
+use crate::regions::region_values;
 use crate::rescue::rescue_fit;
 use crate::sampler::{Quad, Sampler, orientations, score_quads};
 use crate::timing::{Span, Stage, timed};
@@ -242,6 +243,9 @@ fn grid_pass(
             if let Some(d) = diag.as_deref_mut() {
                 record_near_miss(d, sampler, &fit, rs_, qz);
             }
+            if let Some(r) = region_read(sampler, &fit, deadline, mirror, note) {
+                return Some(r);
+            }
             if rs_ >= strong {
                 let mut imgs: Vec<(String, &Gray8)> = vec![("same image".to_string(), gray)];
                 imgs.extend(alt_images.iter().map(|(n, i)| (n.clone(), *i)));
@@ -347,6 +351,10 @@ fn warp_pass(
                         pitch_drift_modules: Some(round2(drift)),
                     });
                 }
+                if let Some(r) = region_read(sampler, &fit, deadline, mirror, &format!(", {note}"))
+                {
+                    return Some(r);
+                }
                 if fit.contrast >= STRONG_FIT {
                     let mut imgs: Vec<(String, &Gray8)> = vec![("same image".to_string(), gray)];
                     imgs.extend(alt_images.iter().map(|(n, i)| (n.clone(), *i)));
@@ -361,6 +369,33 @@ fn warp_pass(
                     }
                 }
             }
+        }
+    }
+    None
+}
+
+/// One more candidate before the rescue: every data region re-fitted on
+/// its own alignment frame (CORE-103). `None` for single-region symbols.
+fn region_read(
+    sampler: &Sampler,
+    fit: &GridFit,
+    deadline: &Deadline,
+    mirrored: bool,
+    note: &str,
+) -> Option<GridRead> {
+    let vals = timed(Stage::Refine, || {
+        region_values(sampler, &fit.quad, fit.axes.as_ref(), fit.geom, deadline)
+    })?;
+    let mut rf = fit.clone();
+    for mode in [Mode::Plane, Mode::Local] {
+        if let Some((rs, dec)) = try_fit_values(&mut rf, mode, vals.clone()) {
+            return Some(GridRead {
+                fit: rf,
+                rs,
+                dec,
+                mirrored,
+                note: format!("region anchors, {} threshold{note}", mode.name()),
+            });
         }
     }
     None
