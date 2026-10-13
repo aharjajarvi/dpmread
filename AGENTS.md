@@ -11,7 +11,7 @@ the Python readers are frozen references.
 |---|---|
 | `python/datamatrix_reader.py` | Reader. Enhancement ladder + three engines tried in turn: zxing (zxing-cpp), libdmtx (pylibdmtx), grid (built-in ECC 200 decoder with soft-erasure Reed-Solomon). Prints a technical report or JSON. |
 | `python/datamatrix_reader_v2.py` | Reader with a warped-grid tier (global timing tracking for marks whose module pitch drifts by more than ±0.45 module). The Rust reader's parity oracle. **Frozen**, like `datamatrix_reader.py` (bug fixes on request only). |
-| `rust/` | **Main reader.** Cargo workspace (`crates/dm-*`): `dpmread` CLI and `dpmread-gui` (egui, drag and drop), at parity with v2; all new reader work goes here. `rust/deny.toml` (cargo-deny: licence allowlist, advisories), `rust/about.toml` + `rust/about.hbs` (cargo-about: generates `THIRD_PARTY_LICENSES.md`). `rust/tools/`: `ci.sh` (local CI), `parity.py` (check against the v2 baseline in the private test data), `build_linux.sh` + `linux-build.Dockerfile` (old-glibc release build in docker), `check_dlls.py` + `msvc-crt.cmake` (Windows: static C/C++ run-time), `release_zip.py` + `zip_readme.txt` (release zip contents, used by `ci.sh` and the release workflow), `dump_fixtures*.py` (test fixtures in the private test data, made on CachyOS only), `*_ref.py` and `rs_bench.py` (Python counterparts of Rust tests and benchmarks). |
+| `rust/` | **Main reader.** Cargo workspace (`crates/dm-*`): `dpmread` CLI and `dpmread-gui` (egui, drag and drop), at parity with v2; all new reader work goes here. `rust/deny.toml` (cargo-deny: licence allowlist, advisories), `rust/about.toml` + `rust/about.hbs` (cargo-about: generates `THIRD_PARTY_LICENSES.md`). `rust/tools/`: `ci.sh` (local CI), `parity.py` (check against the v2 baseline in the private test data), `build_linux.sh` + `linux-build.Dockerfile` (old-glibc release build in docker), `build_android.sh` (`dm-ffi` `.so` for Android apps and its Kotlin bindings), `check_dlls.py` + `msvc-crt.cmake` (Windows: static C/C++ run-time), `release_zip.py` + `zip_readme.txt` (release zip contents, used by `ci.sh` and the release workflow), `dump_fixtures*.py` (test fixtures in the private test data, made on CachyOS only), `*_ref.py` and `rs_bench.py` (Python counterparts of Rust tests and benchmarks). |
 | `python/datamatrix_gen.py` | Interactive generator, Pillow only. Also the source of symbol tables and placement (`SQUARE_SYMBOLS`, `RECT_SYMBOLS`, `build_matrix`, `placement_map`) imported by the reader. |
 | `python/requirements.txt` | Python dependencies of the readers and the generator. |
 | private test data | **Not in this repo**; `DM_PRIVATE_DIR` points at it. `testimages/` (real photos and screenshots, sorted by how the reader handles them: `large/` decoded full-size photos, `easy/` decoded crops (direct sampling, ≥ 50 % unused ECC), `poor/` decoded crops that need rescue sampling or have < 50 % unused ECC, `not_recognized/` not decoded yet; move an image when its category changes), `baseline/python*_baseline.json` (frozen Python outputs, the parity oracle), `testdata/zxing/` and `fixtures/` (Rust test fixtures, not in git). Tests that need it are `#[ignore]`d. |
@@ -49,6 +49,7 @@ rust/target/release/dpmread IMAGE_OR_FOLDER [...] [--json] [--debug DIR] \
     [--polarity dark|light|any] [--exhaustive] [--matrix] [--multi]
 rust/target/release/dpmread-gui [IMAGE_OR_FOLDER ...]   # cargo build --release in rust/
 rust/tools/build_linux.sh            # release binaries for other distros (glibc 2.28)
+rust/tools/build_android.sh          # dm-ffi .so (arm64-v8a, x86_64) + Kotlin bindings
 python python/datamatrix_reader.py IMAGE_OR_FOLDER [...] [same flags, + libdmtx engine]
 python python/datamatrix_gen.py
 ```
@@ -59,7 +60,9 @@ from source): `sudo pacman -S rustup cmake gcc`. On Windows: Visual Studio
 rustup's MSVC toolchain; `rust/.cargo/config.toml` links the static C/C++
 run-time, so the `.exe` files need no VC++ redistributable. `ci.sh` also
 needs `cargo-deny` and `cargo-about` (`sudo pacman -S cargo-deny cargo-about`
-or `cargo install --locked cargo-deny cargo-about`).
+or `cargo install --locked cargo-deny cargo-about`). `build_android.sh` needs the Android NDK,
+`cargo-ndk` and the Rust targets `aarch64-linux-android` and
+`x86_64-linux-android`.
 
 Dependencies: numpy, opencv, zxing-cpp; pylibdmtx optional (needs system
 libdmtx). Missing engines are skipped with a warning; the grid engine always

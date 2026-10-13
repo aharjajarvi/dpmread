@@ -11,16 +11,10 @@ use crate::geom::{Mat3, bilinear};
 use crate::image::GrayF32;
 
 /// AVX2 and FMA available (x86-64 runtime check, cached by std).
+#[cfg(target_arch = "x86_64")]
 #[inline]
 fn simd() -> bool {
-    #[cfg(target_arch = "x86_64")]
-    {
-        std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma")
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        false
-    }
+    std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma")
 }
 
 /// `cv2.remap(img, x, y, INTER_LINEAR, borderMode=BORDER_REPLICATE)` at
