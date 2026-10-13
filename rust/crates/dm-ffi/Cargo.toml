@@ -1,0 +1,31 @@
+[package]
+name = "dm-ffi"
+description = "uniffi bindings of dm-reader for apps (Kotlin)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# cdylib: the .so an app loads; lib: tests and uniffi-bindgen's library mode
+crate-type = ["lib", "cdylib"]
+
+[features]
+# the uniffi-bindgen binary that writes the Kotlin bindings
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+dm-reader = { path = "../dm-reader" }
+serde_json.workspace = true
+uniffi = "0.32.2"
+
+[dev-dependencies]
+dm-ecc = { path = "../dm-ecc" }
+dm-symbol = { path = "../dm-symbol" }
+image = { version = "0.25", default-features = false, features = ["png"] }
