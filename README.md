@@ -64,6 +64,13 @@ and run; nothing to install.
 GUI: start `dpmread-gui` and drop images or folders on the window, or pass
 them on the command line: `dpmread-gui IMAGE_OR_FOLDER ...`.
 
+![dpmread-gui: eight photos of marks on metal parts decoded; the selected one,
+read by the grid decoder, outlined in the image with its text and read
+details beside it](doc/gui.png)
+
+*Images from the Karrach 2021 set (L. Karrach, E. Pivarčiová, J. Imaging 7(9), 163,
+2021), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), scaled in the screenshot.*
+
 Command line:
 
 ```sh
