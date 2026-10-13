@@ -146,3 +146,50 @@ fn missing_file_is_a_load_error() {
     let r = Reader::new(1).read("/nonexistent/dm_ffi.png".into(), default_options());
     assert!(matches!(r, Err(ReadError::Load { .. })));
 }
+
+/// Private test data (fixtures, test images, baselines): `DM_PRIVATE_DIR`
+/// (not part of this repo). Tests that need it are
+/// `#[ignore]`d; `rust/tools/ci.sh` runs them when the data is there.
+fn private_dir() -> PathBuf {
+    std::env::var_os("DM_PRIVATE_DIR")
+        .map(PathBuf::from)
+        .expect("DM_PRIVATE_DIR not set: it points at the private test data")
+}
+
+/// Every `testimages/` image: the FFI JSON equals the CLI's object
+/// (`to_json` of `read_image` with the CLI defaults) except `elapsed_s`.
+/// `DM_FFI_JSON_DIR=DIR` writes the FFI objects as one array to
+/// `DIR/testimages.json` (to compare an Android run with the desktop).
+#[test]
+#[ignore = "needs private test data (DM_PRIVATE_DIR)"]
+fn testimages_match_cli_json() {
+    let dir = private_dir().join("testimages");
+    let folders: Vec<PathBuf> = ["large", "easy", "poor", "not_recognized"]
+        .iter()
+        .map(|f| dir.join(f))
+        .collect();
+    let files = dm_reader::collect_inputs(&folders);
+    assert!(!files.is_empty(), "no images in {}", dir.display());
+    let jobs = dm_reader::default_jobs();
+    let (reader, runner) = (Reader::new(jobs as u32), Runner::new(jobs));
+    let (mut differ, mut all) = (Vec::new(), Vec::new());
+    for f in &files {
+        let out = reader
+            .read(f.to_string_lossy().into_owned(), default_options())
+            .expect("read");
+        let cli = read_image(f, &ReadOptions::default(), &runner).expect("read_image");
+        let got: serde_json::Value = serde_json::from_str(&out.json).expect("valid JSON");
+        let ok = without_elapsed(got.clone()) == without_elapsed(to_dict(&cli));
+        all.push(got);
+        assert_eq!(out.decoded, !cli.data.is_empty());
+        if !ok {
+            differ.push(f.display().to_string());
+        }
+    }
+    if let Some(d) = std::env::var_os("DM_FFI_JSON_DIR") {
+        let json = serde_json::to_string_pretty(&all).expect("JSON");
+        std::fs::write(PathBuf::from(d).join("testimages.json"), json).expect("write the dump");
+    }
+    assert!(differ.is_empty(), "FFI JSON differs: {differ:#?}");
+    eprintln!("{} images, FFI JSON equals the CLI's", files.len());
+}
