@@ -9,16 +9,6 @@ discussion happens in GitHub issues.
 
 Next, in rough order.
 
-### Before 0.1.0
-
-- **Release builds from CI.** Tagged builds for Windows x64 and Linux
-  x86-64 with licence files and checksums, made by GitHub Actions instead
-  of a local script.
-- **Third-party licence file in the release zips.** Generated from the
-  dependency tree so it stays complete.
-
-### After 0.1.0
-
 - **zxing-cpp 3.1.** Newer library version with a detector for large and
   non-flat symbols that uses the internal alignment patterns, and an
   optional denoising pass. Why: better reads on large curved marks, more
