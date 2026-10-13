@@ -70,6 +70,7 @@ impl Settings {
             debug_dir: None,
             multi: self.multi,
             progress: None,
+            analyse: true,
         }
     }
 

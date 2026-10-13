@@ -62,6 +62,10 @@ struct Args {
     /// the rest again (same budget)
     #[arg(long)]
     multi: bool,
+    /// after a zxing read, skip the grid fit that gives the module matrix,
+    /// RS statistics and grades (faster; the text is the same)
+    #[arg(long)]
+    no_analysis: bool,
 }
 
 /// One stderr line per image with `DPMREAD_TIMINGS` set (P4b.7 profiling):
@@ -139,6 +143,7 @@ fn main() -> ExitCode {
         debug_dir: args.debug.clone(),
         multi: args.multi,
         progress: None,
+        analyse: !args.no_analysis,
     };
     let runner = Runner::new(args.jobs.max(1));
     let mut results = Vec::new();

@@ -88,6 +88,7 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--expect RxC` | expected symbol size, repeatable; prunes the search |
 | `--polarity any\|dark\|light` | mark polarity (default: try both) |
 | `--multi` | read every symbol in the image |
+| `--no-analysis` | after a zxing read, skip the grid fit for the symbol, error-correction and quality fields (faster, same text) |
 | `--engines zxing,grid` | restrict the decoders |
 | `--exhaustive` | try every method and keep the majority result |
 | `--jobs N` | worker threads (results do not depend on it) |
