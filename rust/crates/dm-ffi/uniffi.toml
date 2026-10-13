@@ -1,0 +1,4 @@
+[bindings.kotlin]
+# Android-aware Kotlin: API-level checks the Android lint understands
+android = true
+android_cleaner = true

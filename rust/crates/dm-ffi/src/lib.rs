@@ -66,14 +66,15 @@ pub struct ReadOutput {
 
 #[derive(Debug, uniffi::Error)]
 pub enum ReadError {
-    /// The file could not be read or decoded as an image.
-    Load { message: String },
+    /// The file could not be read or decoded as an image. (Not `message`:
+    /// that clashes with `Throwable.message` in the Kotlin bindings.)
+    Load { reason: String },
 }
 
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReadError::Load { message } => f.write_str(message),
+            ReadError::Load { reason } => f.write_str(reason),
         }
     }
 }
@@ -143,7 +144,7 @@ impl Reader {
             s
         };
         let res = r.map_err(|e| ReadError::Load {
-            message: e.to_string(),
+            reason: e.to_string(),
         })?;
         Ok(output(&res, stopped))
     }
