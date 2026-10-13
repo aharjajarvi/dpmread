@@ -8,6 +8,7 @@
 
 pub mod deadline;
 pub mod decode;
+pub mod dots;
 pub mod fit;
 pub mod nearmiss;
 pub mod np;
