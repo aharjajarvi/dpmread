@@ -15,6 +15,11 @@ versions may change command-line flags and the JSON output.
 - `--no-analysis` (and `analyse` in `dm-ffi` options): after a zxing
   read, skip the grid fit that fills in the symbol, error-correction and
   quality fields.
+- `tools/agreement.py`: module agreement of known texts with the symbol
+  in an image, for checking ground-truth labels. Fits the grid on the
+  finder and timing pattern only, then scores every candidate text
+  (`--text`, `--texts-from`, `--digits N`) with the chance of a match by
+  luck and the codeword errors per Reed-Solomon block.
 
 ### Changed
 
