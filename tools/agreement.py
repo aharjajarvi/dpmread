@@ -9,7 +9,7 @@ fit the symbol in the image, and which of many candidate texts fits best?
    image edge for symbols cut by it) are refined on the finder and timing
    pattern only, for every symbol size the candidates encode to. Each is
    sampled on a straight, a timing-tracked and a warped grid (the v2 reader's
-   tiers); the 16 strongest distinct fits are kept and thresholded.
+   tiers); the 16 strongest distinct fits per size are kept and thresholded.
 2. Each candidate text is encoded (`datamatrix_gen.py`) and compared module by
    module with every fit of its size, as seen and mirrored across the
    anti-diagonal (that mirror keeps the finder and timing pattern, so only
@@ -60,7 +60,7 @@ WORK_MODULE_PX = 12      # crops around given corners are scaled to ~this module
 CROP_MARGIN = 0.35       # crop margin around given corners, share of the symbol side
 COARSE_KEEP = 24         # quads coarse-refined per size (as the v2 grid pass)
 FINE_KEEP = 8            # of those, fully refined
-FITS_KEEP = 16           # distinct fits every candidate is scored on
+FITS_KEEP = 16           # distinct fits per symbol size every candidate is scored on
 MIN_INSIDE = 0.4         # share of modules that must lie inside the image
 SIZE_SLACK = 4           # also try symbols up to this many spare data codewords
 MAX_SIDE = 1600          # longest side searched without corners (px)
@@ -372,8 +372,8 @@ def fixed_score(vals: np.ndarray, g: v2.Geometry, inside: np.ndarray) -> float:
 
 
 def find_fits(view: View, syms: list, polarity: str) -> list[dict]:
-    """The FITS_KEEP strongest distinct finder / timing fits over variants,
-    quads, orientations and the candidate sizes; never looks at the data
+    """The FITS_KEEP strongest distinct finder / timing fits per candidate
+    size over variants, quads and orientations; never looks at the data
     modules."""
     fits = []
     for vname, img in variants(view.gray, polarity):
@@ -427,11 +427,12 @@ def find_fits(view: View, syms: list, polarity: str) -> list[dict]:
     fits.sort(key=lambda f: -f["fixed_score"])
     kept = []
     for f in fits:           # one per place: same size and corners within half a module
+        same = [k for k in kept if k["geom"] is f["geom"]]
+        if len(same) == FITS_KEEP:   # per size, so more candidate sizes do not crowd one out
+            continue
         mod = np.linalg.norm(f["quad"][1] - f["quad"][0]) / f["geom"].cols
-        if not any(k["geom"] is f["geom"] and np.abs(k["quad"] - f["quad"]).max() < mod / 2 for k in kept):
+        if not any(np.abs(k["quad"] - f["quad"]).max() < mod / 2 for k in same):
             kept.append(f)
-        if len(kept) == FITS_KEEP:
-            break
     return kept
 
 
