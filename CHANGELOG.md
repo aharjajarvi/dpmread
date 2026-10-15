@@ -28,6 +28,13 @@ versions may change command-line flags and the JSON output.
   after 2 s in total (was up to 8 s for each of 7 attempts). Public sets:
   same results, 186 → 107 s in total, slowest image 30 → 12 s.
 
+### Fixed
+
+- `datamatrix_gen.py`: a C40 or Text run that ended with a shifted
+  character (e.g. lowercase in C40) split across the last full triple lost
+  that character. 56 of 3 000 random texts were affected; all 3 000 now
+  read back with zxing-cpp.
+
 ## [0.2.0] – 2026-10-13
 
 ### Added

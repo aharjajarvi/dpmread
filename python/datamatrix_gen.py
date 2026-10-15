@@ -337,7 +337,8 @@ def encode_data(data: bytes) -> tuple[list[int], list[Segment], list[int]]:
         elif mode in (C40_MODE, TEXT_MODE, X12_MODE):
             conv = {C40_MODE: c40_value, TEXT_MODE: text_value, X12_MODE: x12_value}[mode]
             values: list[int] = []
-            start_of_triple = pos
+            # last point where a triple ended on a character boundary
+            clean_pos, clean_cw = pos, len(cw)
             while pos < len(data):
                 v = conv(data[pos])
                 if v is None:                       # not representable (X12)
@@ -350,14 +351,17 @@ def encode_data(data: bytes) -> tuple[list[int], list[Segment], list[int]]:
                     x = 1600 * a + 40 * b + d + 1
                     cw.append(x >> 8)
                     cw.append(x & 0xFF)
-                    start_of_triple = pos
                 if not values:                      # on a clean triple boundary
+                    clean_pos, clean_cw = pos, len(cw)
                     nm = look_ahead(data, pos, mode)
                     if nm != mode:
                         break
-            # end of run: return to ASCII, re-encoding an unfinished triple there
+            # end of run: return to ASCII, re-encoding in ASCII everything after
+            # the last clean boundary (a shifted character can straddle the
+            # last full triple, so an unfinished triple alone is not enough)
+            del cw[clean_cw:]
             cw.append(UNLATCH_ASCII)
-            pos = start_of_triple
+            pos = clean_pos
             open_seg(ASCII_MODE, pos)
             mode = ASCII_MODE
 
