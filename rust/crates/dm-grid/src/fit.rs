@@ -170,6 +170,24 @@ pub fn plausible(dec: &Decoded) -> bool {
         })
 }
 
+/// Symbols with at most this many check codewords per block (10x10,
+/// 12x12, 8x18) correct at most 3 codewords: a wrong grid passes RS too
+/// often to accept it on RS alone.
+pub const WEAK_RS_ECC: usize = 7;
+/// Largest share of wrong finder / timing modules accepted on those
+/// symbols. Correct reads reach 13.6 %, a 10x10 fitted over a 20x20 at
+/// double pitch 30.6 % (CORE-125).
+pub const WEAK_RS_MAX_FIXED_ERRORS: f64 = 0.22;
+
+/// A weak-RS symbol whose finder / timing pattern does not match the fit.
+pub fn fixed_pattern_too_damaged(g: &Geometry, fixed_errors: usize) -> bool {
+    if g.n_ecc > WEAK_RS_ECC {
+        return false;
+    }
+    let n_fixed = g.fixed_mask.iter().filter(|&&m| m).count();
+    fixed_errors as f64 > WEAK_RS_MAX_FIXED_ERRORS * n_fixed as f64
+}
+
 /// Sample the fit (even grid, or timing-tracked centres) and decode.
 pub fn try_fit(
     sampler: &Sampler,
@@ -203,6 +221,9 @@ pub fn try_fit_values(fit: &mut GridFit, mode: Mode, vals: GrayF32) -> Option<(R
     fit.bits = Some(bits);
     fit.conf = Some(conf);
     fit.threshold = thr;
+    if fixed_pattern_too_damaged(g, fit.fixed_errors) {
+        return None;
+    }
     let rs = timed(Stage::Rs, || rs_decode_symbol(&cw, &cconf, g))?;
     let dec = decode_codewords(&rs.data_cw).ok()?;
     if dec.data.is_empty() || !plausible(&dec) {
