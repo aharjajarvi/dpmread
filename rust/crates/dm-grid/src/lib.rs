@@ -26,7 +26,8 @@ pub use crate::decode::{
     GridRead, MAX_QUADS, NO_QZ_STRONG_FACTOR, STRONG_FIT, grid_decode, grid_decode_seeds,
 };
 pub use crate::fit::{
-    GridFit, Mode, classify, codewords_from_bits, plausible, try_fit, try_fit_values, zscore,
+    GridFit, Mode, WEAK_RS_ECC, WEAK_RS_MAX_FIXED_ERRORS, classify, codewords_from_bits,
+    fixed_pattern_too_damaged, plausible, try_fit, try_fit_values, zscore,
 };
 pub use crate::nearmiss::{
     NearMiss, OUTSIDE_BUSY, SIZE_CHECK_PX, interior_modules, near_miss_key, outside_dark,
