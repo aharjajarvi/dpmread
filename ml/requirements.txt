@@ -1,0 +1,6 @@
+torch>=2.9
+onnx>=1.17
+onnxscript
+numpy
+opencv-python
+Pillow
