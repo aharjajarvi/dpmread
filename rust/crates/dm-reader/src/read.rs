@@ -12,10 +12,10 @@ use dm_codec::Decoded;
 use dm_ecc::RSResult;
 use dm_grid::timing::{self, Acc};
 use dm_grid::{
-    Deadline, GridFit, GridRead, NearMiss, Quality, grid_decode, grid_decode_seeds, max_aspect,
-    near_miss_key, quality,
+    Deadline, FitMap, GridFit, GridRead, NearMiss, Quality, grid_decode, grid_decode_seeds,
+    max_aspect, near_miss_key, quality, symbol_input,
 };
-use dm_imgproc::{Bgr8, Gray8, LoadError, bgr_to_gray, load_image};
+use dm_imgproc::{Bgr8, Gray8, GrayF32, LoadError, bgr_to_gray, load_image};
 use dm_symbol::{Symbol, all_symbols};
 
 use crate::annotate::{save_annotated, save_variants};
@@ -86,6 +86,10 @@ pub struct ReadOptions {
     /// After a zxing read, fit the grid at its position for the module
     /// matrix, RS statistics and grades (`analyse_known`); `false` skips it.
     pub analyse: bool,
+    /// Keep the classifier input of the fit that read and of the best
+    /// failed fits (`ReadResult.fits`, `--dump-fits`); does not change the
+    /// read.
+    pub fit_inputs: bool,
 }
 
 /// Progress callback of `read_image`: `(stage, jobs done, jobs in stage)`
@@ -122,6 +126,7 @@ impl Default for ReadOptions {
             multi: false,
             progress: None,
             analyse: true,
+            fit_inputs: false,
         }
     }
 }
@@ -133,6 +138,110 @@ pub struct ReadNearMiss {
     pub nm: NearMiss,
     pub modules_px_orig: f64,
     pub variant: String,
+}
+
+/// Failed fits kept per image with `fit_inputs` (best by `near_miss_key`,
+/// one per grid job).
+pub const MAX_FAILED_FITS: usize = 3;
+
+/// A grid fit of an image and the module classifier's input for it
+/// (`ReadOptions.fit_inputs`): the fit that read, if any, then the best
+/// failed ones.
+#[derive(Clone, Debug)]
+pub struct FitInput {
+    /// The fit decoded the image's result.
+    pub read: bool,
+    pub variant: String,
+    /// "RxC".
+    pub size: String,
+    pub mirrored: bool,
+    /// Finder / timing score of the fit.
+    pub score: f64,
+    pub fixed_pattern_module_errors: usize,
+    /// Module centres, row-major, in original image pixels.
+    pub centres: Vec<[f64; 2]>,
+    /// The variant resampled through the fit (`dm_grid::symbol_input`).
+    pub input: GrayF32,
+    /// `near_miss_key` of a failed fit, for keeping the best ones.
+    key: (usize, bool, f64),
+}
+
+impl FitInput {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        v: &Variant,
+        quad: &dm_grid::Quad,
+        axes: Option<&(Vec<f64>, Vec<f64>)>,
+        rows: usize,
+        cols: usize,
+        read: bool,
+        mirrored: bool,
+        score: f64,
+        fixed: usize,
+        key: (usize, bool, f64),
+    ) -> Option<Self> {
+        let map = FitMap::new(quad, rows, cols, axes)?;
+        let centres = map
+            .centres(rows, cols)
+            .into_iter()
+            .map(|[x, y]| [x / v.scale + v.ox, y / v.scale + v.oy])
+            .collect();
+        Some(FitInput {
+            read,
+            variant: v.name.clone(),
+            size: format!("{rows}x{cols}"),
+            mirrored,
+            score,
+            fixed_pattern_module_errors: fixed,
+            centres,
+            input: symbol_input(&v.img, &map, rows, cols),
+            key,
+        })
+    }
+
+    fn from_read(v: &Variant, fit: &GridFit, mirrored: bool) -> Option<Self> {
+        let g = fit.geom;
+        let key = (usize::MAX, true, f64::INFINITY);
+        Self::new(
+            v,
+            &fit.quad,
+            fit.axes.as_ref(),
+            g.rows,
+            g.cols,
+            true,
+            mirrored,
+            fit.contrast,
+            fit.fixed_errors,
+            key,
+        )
+    }
+
+    fn from_near_miss(v: &Variant, d: &NearMiss) -> Option<Self> {
+        let (rows, cols) = d.size.split_once('x')?;
+        Self::new(
+            v,
+            &d.quad,
+            d.axes.as_ref(),
+            rows.parse().ok()?,
+            cols.parse().ok()?,
+            false,
+            d.mirrored,
+            d.score,
+            d.fixed_pattern_module_errors,
+            near_miss_key(Some(d)),
+        )
+    }
+}
+
+/// Keep the best `MAX_FAILED_FITS` failed fits, best first.
+fn keep_fit(fits: &mut Vec<FitInput>, f: FitInput) {
+    fits.push(f);
+    fits.sort_by(|a, b| {
+        b.key
+            .partial_cmp(&a.key)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    fits.truncate(MAX_FAILED_FITS);
 }
 
 /// Where the time of one image went (`DPMREAD_TIMINGS`, P4b.7). Seconds;
@@ -182,6 +291,9 @@ pub struct ReadResult {
     pub agreeing: Vec<String>,
     pub sampling: String,
     pub near_miss: Option<ReadNearMiss>,
+    /// `ReadOptions.fit_inputs`: the fit that read (first, `read`), then the
+    /// best failed fits of the grid jobs.
+    pub fits: Vec<FitInput>,
     /// Symbol outline in original image pixels (tl, tr, br, bl as found).
     pub quad: Option<Quad>,
     /// `--multi`: the further symbols, in reading order (each with its own
@@ -489,6 +601,7 @@ fn read_bgr(
     // 2. built-in grid decoder on analogue variants, then on the tiles that
     //    zxing did not read (their gray / flatten variants, not binarised);
     //    all of that with the quiet-zone template, then the ring-less retry
+    let mut failed_fits: Vec<FitInput> = Vec::new();
     if !done(&found) && opts.engines.grid {
         gvars = runner.install(|| grid_variants(bgr, invert, inverted_extra));
         tm.grid_variants = lap(&mut t);
@@ -573,9 +686,15 @@ fn read_bgr(
                 if done(&found) {
                     return ControlFlow::Break(());
                 }
-            } else if let Some(d) = diag
-                && near_miss_key(Some(&d)) > near_miss_key(res.near_miss.as_ref().map(|n| &n.nm))
-            {
+            } else if let Some(d) = diag {
+                if opts.fit_inputs
+                    && let Some(f) = FitInput::from_near_miss(v, &d)
+                {
+                    keep_fit(&mut failed_fits, f);
+                }
+                if near_miss_key(Some(&d)) <= near_miss_key(res.near_miss.as_ref().map(|n| &n.nm)) {
+                    return ControlFlow::Continue(());
+                }
                 res.near_miss = Some(ReadNearMiss {
                     modules_px_orig: d.modules_px / v.scale,
                     nm: d,
@@ -588,6 +707,7 @@ fn read_bgr(
         tm.grid_busy = busy.swap(0, Ordering::Relaxed) as f64 * 1e-9;
     }
 
+    res.fits = failed_fits;
     res.elapsed = t0.elapsed().as_secs_f64();
     if found.is_empty() {
         res.timings = timing::enabled().then_some(tm);
@@ -626,6 +746,11 @@ fn read_bgr(
                 note,
             } = *r;
             res.quality = Some(quality(&gray_orig, &fit, v.scale, &rs, (v.ox, v.oy)));
+            if opts.fit_inputs
+                && let Some(f) = FitInput::from_read(v, &fit, mirrored)
+            {
+                res.fits.insert(0, f);
+            }
             res.fit = Some(fit);
             res.rs = Some(rs);
             res.dec = Some(dec);
@@ -642,7 +767,16 @@ fn read_bgr(
             }
             if opts.engines.grid && opts.analyse {
                 let dl = deadline.min(Instant::now() + Duration::from_secs_f64(ANALYSE_S));
-                analyse_known(&mut res, &by_name, &quad, &gray_orig, expect, runner, dl);
+                analyse_known(
+                    &mut res,
+                    &by_name,
+                    &quad,
+                    &gray_orig,
+                    expect,
+                    runner,
+                    dl,
+                    opts.fit_inputs,
+                );
             }
         }
     }
@@ -686,6 +820,7 @@ fn analyse_known(
     expect: Option<&[Symbol]>,
     runner: &Runner,
     deadline: Instant,
+    fit_inputs: bool,
 ) {
     let Some(v) = by_name.get(&res.variant) else {
         return;
@@ -728,6 +863,9 @@ fn analyse_known(
             return ControlFlow::Continue(());
         };
         res.quality = Some(quality(gray_orig, &r.fit, gv.scale, &r.rs, (gv.ox, gv.oy)));
+        if fit_inputs && let Some(f) = FitInput::from_read(gv, &r.fit, r.mirrored) {
+            res.fits.insert(0, f);
+        }
         res.fit = Some(r.fit);
         res.rs = Some(r.rs);
         res.dec = Some(r.dec);

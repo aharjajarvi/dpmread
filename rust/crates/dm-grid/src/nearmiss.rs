@@ -150,6 +150,12 @@ pub struct NearMiss {
     /// Warped-grid near miss only (both timing dash counts matched),
     /// rounded to 2 decimals; `None` = key absent.
     pub pitch_drift_modules: Option<f64>,
+    /// The fit: corners tl, tr, br, bl in the grid job's image pixels,
+    /// tracked column / row centres of a warped or timing-tracked grid,
+    /// and whether the symbol was read mirrored (`--dump-fits`).
+    pub quad: Quad,
+    pub axes: Option<(Vec<f64>, Vec<f64>)>,
+    pub mirrored: bool,
 }
 
 /// Sort key of near misses (`near_miss_key`): confirmed size first, a quiet
