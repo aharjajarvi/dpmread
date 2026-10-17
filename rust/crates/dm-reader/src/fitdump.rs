@@ -4,7 +4,8 @@
 //! Per image `STEM.fits.json` (file, decoded text, input geometry, one entry
 //! per fit: `read`, `variant`, `size`, `mirrored`, `score`,
 //! `fixed_pattern_module_errors`, `centres` in original image pixels,
-//! row-major, and its input file) and `STEM.fitN.npy` (float32, gray 0..1 of
+//! row-major, the reader's module `bits` and `conf` for the fit, and its
+//! input file) and `STEM.fitN.npy` (float32, gray 0..1 of
 //! the fit's variant, `INPUT_PPM` pixels per module, `INPUT_MARGIN` modules
 //! of margin; symbol dark on light).
 
@@ -61,6 +62,8 @@ pub fn write_fit_dump(dir: &Path, res: &ReadResult) -> io::Result<()> {
             "score": f.score,
             "fixed_pattern_module_errors": f.fixed_pattern_module_errors,
             "centres": f.centres,
+            "bits": f.bits,
+            "conf": f.conf,
             "input": name,
         }));
     }

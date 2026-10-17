@@ -162,6 +162,10 @@ pub struct FitInput {
     pub centres: Vec<[f64; 2]>,
     /// The variant resampled through the fit (`dm_grid::symbol_input`).
     pub input: GrayF32,
+    /// The reader's module classification of the fit (row-major, 1 =
+    /// dark) and its confidences: the one that decoded, or the last tried.
+    pub bits: Option<Vec<u8>>,
+    pub conf: Option<Vec<f64>>,
     /// `near_miss_key` of a failed fit, for keeping the best ones.
     key: (usize, bool, f64),
 }
@@ -179,6 +183,8 @@ impl FitInput {
         score: f64,
         fixed: usize,
         key: (usize, bool, f64),
+        bits: Option<Vec<u8>>,
+        conf: Option<Vec<f64>>,
     ) -> Option<Self> {
         let map = FitMap::new(quad, rows, cols, axes)?;
         let centres = map
@@ -195,6 +201,8 @@ impl FitInput {
             fixed_pattern_module_errors: fixed,
             centres,
             input: symbol_input(&v.img, &map, rows, cols),
+            bits,
+            conf,
             key,
         })
     }
@@ -213,6 +221,8 @@ impl FitInput {
             fit.contrast,
             fit.fixed_errors,
             key,
+            fit.bits.clone(),
+            fit.conf.clone(),
         )
     }
 
@@ -229,6 +239,8 @@ impl FitInput {
             d.score,
             d.fixed_pattern_module_errors,
             near_miss_key(Some(d)),
+            d.bits.clone(),
+            d.conf.clone(),
         )
     }
 }

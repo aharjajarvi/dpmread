@@ -143,7 +143,8 @@ annotated copy of the image with the symbol outline and grid.
 **Grid fits** (`--dump-fits DIR`): per image `NAME.fits.json` with the
 grid fit that read (if any) and the best three failed fits, one per grid
 job: symbol size, variant, mirrored flag, finder / timing score,
-fixed-pattern module errors and every module centre in image pixels; and
+fixed-pattern module errors, every module centre in image pixels and the
+reader's own module bits and confidences for the fit; and
 per fit `NAME.fitN.npy`, the variant resampled through the fit at 6 pixels
 per module with a 2-module margin (float32, gray 0..1, symbol dark on
 light). Material for training and checking a module classifier; the read

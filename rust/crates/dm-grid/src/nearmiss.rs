@@ -156,6 +156,10 @@ pub struct NearMiss {
     pub quad: Quad,
     pub axes: Option<(Vec<f64>, Vec<f64>)>,
     pub mirrored: bool,
+    /// The fit's last module classification (row-major bits, 1 = dark, and
+    /// confidences), if it got that far.
+    pub bits: Option<Vec<u8>>,
+    pub conf: Option<Vec<f64>>,
 }
 
 /// Sort key of near misses (`near_miss_key`): confirmed size first, a quiet

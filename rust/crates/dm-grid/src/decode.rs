@@ -397,6 +397,8 @@ fn warp_pass(
                         quad: fit.quad,
                         axes: fit.axes.clone(),
                         mirrored: mirror,
+                        bits: fit.bits.clone(),
+                        conf: fit.conf.clone(),
                     });
                 }
                 if let Some(r) = region_read(sampler, &fit, deadline, mirror, &format!(", {note}"))
@@ -544,6 +546,8 @@ fn record_near_miss(
             quad: fit.quad,
             axes: fit.axes.clone(),
             mirrored,
+            bits: fit.bits.clone(),
+            conf: fit.conf.clone(),
         });
     }
 }
