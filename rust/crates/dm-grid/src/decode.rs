@@ -3,7 +3,7 @@
 
 use crate::deadline::Deadline;
 use crate::dots::{DOT_TEXTURE_MIN, disc_values, dot_texture};
-use crate::fit::{GridFit, Mode, try_fit, try_fit_values};
+use crate::fit::{GridFit, Mode, anti_transposed, try_fit, try_fit_values};
 use crate::nearmiss::{
     NearMiss, OUTSIDE_BUSY, interior_modules, near_miss_key, outside_dark, round2, size_agree,
 };
@@ -376,6 +376,23 @@ fn warp_pass(
                             mirrored: mirror,
                             note,
                         });
+                    }
+                }
+                // the warp fit of the other frame starts from another corner
+                // and often lands elsewhere: also read this grid in it
+                if let Some((mut at, at_vals)) = anti_transposed(&fit, &vals) {
+                    for mode in [Mode::Plane, Mode::Local] {
+                        if let Some((rs, dec)) = try_fit_values(&mut at, mode, at_vals.clone()) {
+                            let note =
+                                format!("{} threshold, anti-transposed frame, {note}", mode.name());
+                            return Some(GridRead {
+                                fit: at,
+                                rs,
+                                dec,
+                                mirrored: !mirror,
+                                note,
+                            });
+                        }
                     }
                 }
                 if let Some(d) = diag.as_deref_mut()

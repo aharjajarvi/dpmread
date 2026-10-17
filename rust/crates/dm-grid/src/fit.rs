@@ -232,6 +232,32 @@ pub fn try_fit_values(fit: &mut GridFit, mode: Mode, vals: GrayF32) -> Option<(R
     Some((rs, dec))
 }
 
+/// A square fit and its module values in the anti-transposed frame:
+/// module (r, c) of the new frame is module (n - 1 - c, n - 1 - r) of
+/// `fit`. The finder L and the timing pattern map onto themselves, so a
+/// fit in the wrong one of the two frames has a good fixed pattern but
+/// mirrored data (CORE-128). Corners become br, tr, tl, bl; the mirrored
+/// flag of a read flips. `None` for rectangular symbols.
+pub fn anti_transposed(fit: &GridFit, vals: &GrayF32) -> Option<(GridFit, GrayF32)> {
+    let g = fit.geom;
+    if g.rows != g.cols {
+        return None;
+    }
+    let n = g.rows;
+    let q = fit.quad;
+    let mut t = GridFit::new(g, [q[2], q[1], q[0], q[3]], fit.contrast);
+    t.axes = fit.axes.as_ref().map(|(u, v)| {
+        (
+            (0..n).map(|c| n as f64 - v[n - 1 - c]).collect(),
+            (0..n).map(|r| n as f64 - u[n - 1 - r]).collect(),
+        )
+    });
+    let data = (0..n * n)
+        .map(|i| vals.data[(n - 1 - i % n) * n + (n - 1 - i / n)])
+        .collect();
+    Some((t, Image::from_vec(n, n, data)))
+}
+
 /// Module values as contrast z-scores (x100) against the fixed pattern.
 pub fn zscore(v: &GrayF32, g: &Geometry) -> GrayF32 {
     let (d, l) = fixed_means(&v.data, g);
