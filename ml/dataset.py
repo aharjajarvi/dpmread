@@ -19,8 +19,10 @@ mirrored against the true symbol, so the matrix is turned to match.
     are dropped.
 
 Output in OUT, per symbol size `RxC`: `RxC.x.u8` (N x H x W uint8, gray
-x 255), `RxC.y.u8` (N x rows x cols), and `index.tsv` (size, row in the
-size's arrays, source image, fit number, read, centre error or agreement).
+x 255), `RxC.y.u8` (N x rows x cols), the reader's own classification of
+the fit when the dump has it, `RxC.rb.u8` (bits, 255 = absent) and
+`RxC.rc.f4` (confidences), and `index.tsv` (size, row in the size's
+arrays, source image, fit number, read, centre error or agreement).
 
 Usage:
   python ml/dataset.py OUT --fits DUMP [DUMP ...] [--synth]
@@ -116,22 +118,26 @@ class Writer:
         self.shapes: dict[str, list[int]] = {}
 
     def add(self, size: str, x: np.ndarray, y: np.ndarray, source: str, k: int,
-            read: bool, score: float) -> None:
+            read: bool, score: float, rbits=None, rconf=None) -> None:
         if size not in self.files:
-            self.files[size] = (open(self.out / f"{size}.x.u8", "wb"),
-                                open(self.out / f"{size}.y.u8", "wb"))
+            self.files[size] = tuple(open(self.out / f"{size}.{k}", "wb")
+                                     for k in ("x.u8", "y.u8", "rb.u8", "rc.f4"))
             self.count[size] = 0
             self.shapes[size] = [*x.shape, *y.shape]
-        fx, fy = self.files[size]
+        fx, fy, fb, fc = self.files[size]
         fx.write(np.clip(np.rint(x * 255), 0, 255).astype(np.uint8).tobytes())
         fy.write(y.astype(np.uint8).tobytes())
+        if rbits is None or len(rbits) != y.size:
+            rbits, rconf = np.full(y.size, 255), np.full(y.size, np.nan)
+        fb.write(np.asarray(rbits, np.uint8).tobytes())
+        fc.write(np.asarray(rconf, np.float32).tobytes())
         self.index.write(f"{size}\t{self.count[size]}\t{source}\t{k}\t{int(read)}\t{score:.4f}\n")
         self.count[size] += 1
 
     def close(self) -> None:
-        for fx, fy in self.files.values():
-            fx.close()
-            fy.close()
+        for fs in self.files.values():
+            for f in fs:
+                f.close()
         self.index.close()
         meta = {s: {"n": self.count[s], "x": self.shapes[s][:2], "y": self.shapes[s][2:]}
                 for s in self.count}
@@ -146,6 +152,20 @@ def load(out: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         x = np.memmap(out / f"{s}.x.u8", np.uint8, "r", shape=(m["n"], *m["x"]))
         y = np.memmap(out / f"{s}.y.u8", np.uint8, "r", shape=(m["n"], *m["y"]))
         data[s] = (x, y)
+    return data
+
+
+def load_reader(out: Path) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+    """Per size the reader's (bits uint8, conf float32), N x rows x cols;
+    None for a set made before they were stored."""
+    meta = json.loads((out / "meta.json").read_text())
+    data = {}
+    for s, m in meta.items():
+        if not (out / f"{s}.rb.u8").exists():
+            return None
+        b = np.memmap(out / f"{s}.rb.u8", np.uint8, "r", shape=(m["n"], *m["y"]))
+        c = np.memmap(out / f"{s}.rc.f4", np.float32, "r", shape=(m["n"], *m["y"]))
+        data[s] = (b, c)
     return data
 
 
@@ -186,7 +206,8 @@ def main() -> int:
                 if lab is None:
                     dropped += 1
                     continue
-                w.add(fit["size"], x, lab[0], str(src), k, fit["read"], lab[1])
+                w.add(fit["size"], x, lab[0], str(src), k, fit["read"], lab[1],
+                      fit.get("bits"), fit.get("conf"))
                 kept += 1
     w.close()
     print(f"{kept} samples kept, {dropped} fits dropped, {len(w.count)} sizes")
