@@ -28,6 +28,14 @@ versions may change command-line flags and the JSON output.
   laser, ink and dot-peen styles on procedural or photo wood, scene and
   camera effects, a seeded parameter record per image to render it again,
   checks against the reader, and an HTML review sheet.
+- `tools/synth_marks.py --scene WxH`: camera-sized frames with 0-3 marks
+  on boards, gaps and flat surfaces, with distractors (text, labels, 1D
+  bar codes, dot-matrix text, knots, strokes, stains), for training a
+  symbol detector; the record holds every mark's corners, size and
+  polarity. `--check` on a scene run counts reads that match no label.
+- `ml/boxes.py`: symbol boxes on real images for a detector, merged from
+  labelled corners, the further codes `--multi` reads, and a local page
+  to draw boxes on codes no reader decodes.
 - `tools/agreement.py`: module agreement of known texts with the symbol
   in an image, for checking ground-truth labels. Fits the grid on the
   finder and timing pattern only, then scores every candidate text

@@ -48,6 +48,7 @@ Needs numpy, opencv and Pillow (the generator's import).
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import os
@@ -732,15 +733,20 @@ def photometry(img: np.ndarray, c: dict, rng: np.random.Generator) -> np.ndarray
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
 
-def render(p: dict, patch_dir: Path | None = None) -> dict:
-    """Image, clean image and ground truth for one parameter record."""
+def render(p: dict, patch_dir: Path | None = None, transfer: bool = False) -> dict:
+    """Image, clean image and ground truth for one parameter record.
+
+    With `transfer` (scenes) there is no image and no clean image but a
+    `ratio`: the colour with the marks over the same surface without them
+    (h x w x 3, 1 where nothing is marked), multiplied into a larger frame."""
     res = gen.generate(p["text"], allow_rect=True, forced_size=p["size"])
     matrix = np.array(res.matrix, np.uint8)
     rows, cols = matrix.shape
     rng = np.random.default_rng(p["render_seed"])
     geo = module_geometry(p, rows, cols, rng)
     cam = Camera(p, rows, cols, geo)
-    w, h, S = cam.w, cam.h, SUPERSAMPLE
+    # scene marks store a lower resolution for large marks (speed)
+    w, h, S = cam.w, cam.h, p.get("supersample", SUPERSAMPLE)
 
     # mark-plane position of every supersampled pixel centre
     xs = (np.arange(w * S) + 0.5) / S - 0.5
@@ -748,6 +754,7 @@ def render(p: dict, patch_dir: Path | None = None) -> dict:
     gx, gy = np.meshgrid(xs, ys)
     uv = cam.to_plane(np.stack([gx.ravel(), gy.ravel()], 1))
     R = int(max(12, math.ceil(p["ppm"] * S)))
+    R = min(R, p.get("max_raster", R))
     pl = Plane(uv.min(0), uv.max(0), R)
     mx = ((uv[:, 0] - pl.u0) * R - 0.5).reshape(h * S, w * S).astype(np.float32)
     my = ((uv[:, 1] - pl.v0) * R - 0.5).reshape(h * S, w * S).astype(np.float32)
@@ -756,18 +763,27 @@ def render(p: dict, patch_dir: Path | None = None) -> dict:
         big = cv2.remap(raster, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
         return cv2.resize(big, (w, h), interpolation=cv2.INTER_AREA)
 
-    ones = np.ones(matrix.shape)
-    flat = to_image(draw_squares(pl, geo, matrix, ones, ones))
-    clean = np.clip(np.round((1.0 - flat if p["polarity"] == "dark" else flat) * 255),
-                    0, 255).astype(np.uint8)
+    out = {}
+    if not transfer:
+        ones = np.ones(matrix.shape)
+        flat = to_image(draw_squares(pl, geo, matrix, ones, ones))
+        out["clean"] = np.clip(np.round((1.0 - flat if p["polarity"] == "dark" else flat)
+                                        * 255), 0, 255).astype(np.uint8)
     burn, shade, visible = draw_marks(pl, p, geo, matrix, rng)
+    # the bare surface draws the same noise: same generator state
+    rng_bare = copy.deepcopy(rng) if transfer else None
     colour = to_image(compose(pl, p, burn, shade, rows, cols, rng, patch_dir))
-    image = photometry(colour, p["camera"], rng)
+    if transfer:
+        bare_p = dict(p, scene={"digits": None, "edge": None})
+        bare = to_image(compose(pl, bare_p, pl.zeros(), None, rows, cols, rng_bare, patch_dir))
+        out["ratio"] = np.clip(colour / np.maximum(bare, 1e-3), 0.0, 1.5).astype(np.float32)
+    else:
+        out["image"] = photometry(colour, p["camera"], rng)
 
     centres = cam.to_image(np.stack([geo["u"].ravel(), geo["v"].ravel()], 1))
     corners = cam.to_image(geo["warp"](np.array([0.0, cols, cols, 0.0]),
                                        np.array([0.0, 0.0, rows, rows])))
-    return {"image": image, "clean": clean, "truth": {
+    return {**out, "truth": {
         "text": p["text"], "size": p["size"], "polarity": p["polarity"],
         "matrix": matrix.tolist(),
         # outer symbol corners after drift and camera: top-left, top-right,
@@ -776,6 +792,405 @@ def render(p: dict, patch_dir: Path | None = None) -> dict:
         "centres": np.round(centres.reshape(rows, cols, 2), 2).tolist(),
         "visible": visible.tolist(),
     }}
+
+
+# --------------------------------------------------------------------------
+# Scenes (--scene): camera-sized frames with 0-3 marks, for the detector
+# --------------------------------------------------------------------------
+SCENE_MARKS = (0.05, 0.5, 0.3, 0.15)   # share of frames with 0, 1, 2, 3 marks
+# symbol side / long frame side, log-uniform; real phone photos 3.1-27.5 %,
+# median 10.4 %
+SCENE_SIDE = (0.03, 0.28)
+SCENE_CUT = 0.06         # share of marks that may cross the frame edge
+SCENE_KEEP_OUT = 2.0     # modules kept free around everything marked
+FONTS = (cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_DUPLEX, cv2.FONT_HERSHEY_COMPLEX,
+         cv2.FONT_HERSHEY_TRIPLEX, cv2.FONT_HERSHEY_PLAIN)
+DISTRACTORS = ("text", "text", "label", "barcode", "dots", "knot", "stroke", "stain")
+
+
+def sample_surface(rng: np.random.Generator) -> dict:
+    """One region of the frame: wood, a dark gap between boards or another
+    flat surface (cardboard, concrete, plastic)."""
+    k = rng.random()
+    if k < 0.65:
+        return scene_wood(rng)
+    if k < 0.85:
+        return {"kind": "gap", "level": u(rng, 0.03, 0.3), "noise": u(rng, 0.0, 0.05)}
+    grey = rng.uniform(0.25, 0.95)            # low saturation: cardboard, concrete
+    return {"kind": "flat", "rgb": [round(float(grey * t), 3)
+                                    for t in rng.uniform(0.85, 1.1, 3)],
+            "noise": u(rng, 0.01, 0.08), "cell": u(rng, 1.0, 40.0, 1)}
+
+
+def scene_wood(rng: np.random.Generator) -> dict:
+    """Wood across a frame: rings 2-6x wider than under one mark and the
+    end-grain centre mostly out of the frame (at mark scale whole frames
+    showed fine bullseye rings)."""
+    s = sample_substrate(rng, {}, 0.0)
+    s["dim"] = u(rng, 0.6, 1.05)
+    s["spacing"] = round(s["spacing"] * float(rng.uniform(2.0, 6.0)), 3)
+    s["ring_c"] = round(s["ring_c"] * 0.7, 3)
+    if s["kind"] == "end":
+        s["centre_dist"] = round(s["centre_dist"] * float(rng.uniform(3.0, 10.0)), 2)
+    return s
+
+
+def sample_distractor(rng: np.random.Generator, W: int, H: int) -> dict:
+    """Shape, size (pixels) and colour; the position is set on placement."""
+    kind = str(rng.choice(DISTRACTORS))
+    short = min(W, H)
+    ink = [round(float(v), 3) for v in rng.uniform(0.02, 0.2) * rng.uniform(0.8, 1.2, 3)]
+    if rng.random() < 0.4:               # burned, brown-black
+        t = rng.uniform(0.3, 1.0)
+        ink = [round(float(a * (1 - t) + b * t), 3)
+               for a, b in zip((0.6, 0.38, 0.19), (0.10, 0.07, 0.05))]
+    d = {"kind": kind, "deg": u(rng, -180.0, 180.0, 1) if rng.random() < 0.3
+         else round(float(rng.integers(-1, 3) * 90 + rng.normal(0.0, 5.0)), 1),
+         "rgb": ink, "opacity": u(rng, 0.5, 1.0), "pos": None}
+    if kind in ("text", "dots", "label"):
+        d["text"] = random_text(rng, str(rng.choice(TEMPLATES)))[:14] or "x"
+        d["font"] = int(rng.integers(0, len(FONTS)))
+        d["height"] = u(rng, 0.012, 0.06) * short
+        d["stroke"] = u(rng, 0.08, 0.2)
+    if kind == "dots":                   # dot-matrix printing, dot peen text
+        d["height"] = u(rng, 0.02, 0.08) * short
+        d["dot"] = u(rng, 0.5, 0.95)
+    if kind == "label":                  # paper label with text and a bar code
+        d["paper"] = [u(rng, 0.85, 1.0)] * 3
+        d["lines"] = int(rng.integers(1, 4))
+        d["bars"] = bool(rng.random() < 0.6)
+        d["seed"] = int(rng.integers(0, 2**31))
+    if kind == "barcode":
+        d["height"] = u(rng, 0.04, 0.15) * short
+        d["bar"] = u(rng, 1.0, 4.0)       # narrowest bar, pixels
+        d["n"] = int(rng.integers(20, 60))
+        d["seed"] = int(rng.integers(0, 2**31))
+    if kind == "knot":
+        d["r"] = [u(rng, 0.01, 0.08) * short, u(rng, 0.01, 0.05) * short]
+    if kind == "stroke":                 # marker pen or scratch
+        d["len"] = u(rng, 0.05, 0.4) * short
+        d["width"] = u(rng, 1.0, 0.01 * short + 1.5)
+        d["bend"] = u(rng, -0.3, 0.3)
+    if kind == "stain":
+        d["r"] = u(rng, 0.03, 0.15) * short
+        d["seed"] = int(rng.integers(0, 2**31))
+        d["opacity"] = u(rng, 0.15, 0.5)
+    return d
+
+
+def sample_scene_frame(rng: np.random.Generator, seed: list[int], W: int, H: int,
+                       styles: list[str], patches: dict) -> dict:
+    """One scene record: marks (each a full mark record, rendered as a crop
+    and multiplied into the frame), surfaces, distractors, camera. Positions
+    are chosen when the frame is first rendered and stored."""
+    n = int(rng.choice(len(SCENE_MARKS), p=SCENE_MARKS))
+    marks = []
+    for _ in range(n):
+        p = sample_params(rng, seed, styles, patches)
+        side = max(int(v) for v in p["size"].split("x"))
+        frac = math.exp(rng.uniform(*np.log(SCENE_SIDE)))
+        p["ppm"] = round(max(1.0, frac * max(W, H) / side), 2)
+        # the frame has the edges; the crop needs room for the digits
+        p["scene"]["edge"] = None
+        p["quiet"] = 8.0 if p["scene"]["digits"] else 2.5
+        # about 24 supersampled pixels per module, 48 raster pixels at most:
+        # a large mark at 4x took seconds and hundreds of MB
+        p["supersample"] = max(1, min(SUPERSAMPLE, math.ceil(24 / p["ppm"])))
+        p["max_raster"] = 48
+        marks.append({"params": p, "cut": bool(rng.random() < SCENE_CUT), "offset": None})
+    ppms = [m["params"]["ppm"] for m in marks]
+    unit = float(np.median(ppms)) if ppms else math.exp(rng.uniform(math.log(2), math.log(10)))
+    n_edges = int(rng.choice(4, p=(0.35, 0.3, 0.25, 0.1)))
+    surfaces = [sample_surface(rng) for _ in range(n_edges + 1)]
+    if n and all(s["kind"] in ("gap", "flat") for s in surfaces):
+        surfaces[int(rng.integers(0, len(surfaces)))] = scene_wood(rng)
+    camera = sample_camera(rng, min(ppms) if ppms else unit)
+    camera["jpeg"] = int(rng.integers(80, 97))         # phone frames are JPEG
+    return {
+        "seed": seed, "frame": [W, H],
+        "render_seed": int(rng.integers(0, 2**31)),
+        "place_seed": int(rng.integers(0, 2**31)),
+        "unit": round(unit, 3),
+        # board edges: parallel lines across the frame, near 0 or 90 degrees
+        "edge_deg": round(float(rng.integers(0, 2) * 90 + rng.normal(0.0, 6.0)), 2),
+        "edges": sorted(u(rng, 0.1, 0.9) for _ in range(n_edges)),
+        "seam": u(rng, 0.0, 0.6),
+        "surfaces": surfaces,
+        "marks": marks,
+        "distractors": [sample_distractor(rng, W, H) for _ in range(int(rng.poisson(3.0)))],
+        "camera": camera,
+    }
+
+
+class Frame:
+    """Region geometry of a scene: board edges as lines across the frame."""
+
+    def __init__(self, sp: dict):
+        self.W, self.H = sp["frame"]
+        a = math.radians(sp["edge_deg"])
+        self.n = np.array([math.cos(a), math.sin(a)])
+        ext = abs(self.W * self.n[0]) + abs(self.H * self.n[1])
+        mid = np.array([self.W / 2, self.H / 2]) @ self.n
+        self.cuts = [mid + (f - 0.5) * ext for f in sp["edges"]]
+
+    def region(self, xy: np.ndarray) -> np.ndarray:
+        return np.searchsorted(self.cuts, xy @ self.n)
+
+    def maps(self) -> tuple[np.ndarray, np.ndarray]:
+        """Region index and distance to the nearest edge, per pixel."""
+        yy, xx = np.mgrid[0:self.H, 0:self.W].astype(np.float32)
+        t = xx * self.n[0] + yy * self.n[1]
+        reg = np.searchsorted(self.cuts, t)
+        dist = np.full(t.shape, np.inf, np.float32)
+        for c in self.cuts:
+            dist = np.minimum(dist, np.abs(t - c))
+        return reg, dist
+
+
+def surface_rgb(s: dict, shape: tuple[int, int], unit: float,
+                rng: np.random.Generator) -> np.ndarray:
+    H, W = shape
+    if s["kind"] in ("end", "side"):
+        U, V = np.meshgrid((np.arange(W, dtype=np.float32) + 0.5) / unit,
+                           (np.arange(H, dtype=np.float32) + 0.5) / unit)
+        pl = type("P", (), {"R": unit, "U": U, "V": V})
+        rgb, _ = wood(pl, s, int(H / unit), int(W / unit), rng, None)
+        return rgb
+    if s["kind"] == "gap":
+        g = s["level"] * (1 + s["noise"] * value_noise(rng, shape, 8.0))
+        return (np.repeat(g[..., None], 3, 2) * [1.0, 0.95, 0.85]).astype(np.float32)
+    n = 1 + s["noise"] * value_noise(rng, shape, s["cell"]) \
+        + 0.5 * s["noise"] * value_noise(rng, shape, 1.0)
+    return (np.array(s["rgb"], np.float32) * n[..., None]).astype(np.float32)
+
+
+def text_mask(text: str, font: int, height: float, stroke: float) -> np.ndarray:
+    """Anti-aliased text, 0..1, about `height` pixels high, with a margin."""
+    f = FONTS[font]
+    (tw, th), base = cv2.getTextSize(text, f, 1.0, 1)
+    sc = max(height, 4.0) / th
+    thick = max(1, round(stroke * height))
+    w, h = int(tw * sc + 2 * thick + 4), int((th + base) * sc + 2 * thick + 4)
+    m = np.zeros((h, w), np.uint8)
+    cv2.putText(m, text, (thick + 2, int(th * sc) + thick + 2), f, sc, 255, thick, cv2.LINE_AA)
+    return m.astype(np.float32) / 255.0
+
+
+def flat_patch(rgb: list[float], a: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    return np.broadcast_to(np.array(rgb, np.float32), (*a.shape, 3)), a.astype(np.float32)
+
+
+def distractor_patch(d: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Colour (h x w x 3) and alpha (h x w) of a distractor, upright."""
+    k = d["kind"]
+    if k == "text":
+        return flat_patch(d["rgb"], text_mask(d["text"], d["font"], d["height"], d["stroke"]))
+    if k == "dots":
+        # the text 7 cells high, one round dot per inked cell
+        cells = text_mask(d["text"], 4, 7.0, 0.12) > 0.5
+        pitch = d["height"] / 7.0
+        h, w = cells.shape
+        a = np.zeros((int(h * pitch) + 2, int(w * pitch) + 2), np.float32)
+        r = max(0.6, d["dot"] * pitch / 2)
+        for i, j in zip(*np.nonzero(cells)):
+            cv2.circle(a, (int(round((j + 0.5) * pitch * 16)), int(round((i + 0.5) * pitch * 16))),
+                       int(round(r * 16)), 1.0, -1, cv2.LINE_AA, 4)
+        return flat_patch(d["rgb"], a)
+    if k == "barcode":
+        rng = np.random.default_rng(d["seed"])
+        widths = rng.integers(1, 5, 2 * d["n"]) * d["bar"]
+        edges = np.concatenate([[0.0], np.cumsum(widths)])
+        w, h = int(edges[-1]) + 2, max(2, int(d["height"]))
+        x = (np.arange(w * 4) + 0.5) / 4.0
+        bar = (np.searchsorted(edges, x, side="right") % 2 == 1).astype(np.float32)
+        return flat_patch(d["rgb"], np.repeat(bar.reshape(w, 4).mean(1)[None, :], h, 0))
+    if k == "label":
+        rng = np.random.default_rng(d["seed"])
+        lines = [text_mask(d["text"] if i == 0 else random_text(rng, "alnum"), d["font"],
+                           d["height"], d["stroke"]) for i in range(d["lines"])]
+        if d["bars"]:
+            bd = {"kind": "barcode", "seed": d["seed"], "n": int(rng.integers(15, 35)),
+                  "bar": max(1.0, d["height"] / 8), "height": d["height"] * 2.5,
+                  "rgb": d["rgb"]}
+            lines.append(distractor_patch(bd)[1])
+        pad = int(d["height"] * 0.8) + 2
+        w = max(m.shape[1] for m in lines) + 2 * pad
+        h = sum(m.shape[0] for m in lines) + 2 * pad
+        ink = np.zeros((h, w), np.float32)
+        y = pad
+        for m in lines:
+            ink[y:y + m.shape[0], pad:pad + m.shape[1]] = m
+            y += m.shape[0]
+        paper = np.array(d["paper"], np.float32)
+        rgb = paper * (1 - ink[..., None]) + np.array(d["rgb"], np.float32) * ink[..., None]
+        return rgb.astype(np.float32), np.ones((h, w), np.float32)
+    if k == "knot":
+        rx, ry = d["r"]
+        w, h = int(2.6 * rx) + 3, int(2.6 * ry) + 3
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        r = np.hypot((xx - w / 2) / rx, (yy - h / 2) / ry)
+        return flat_patch(d["rgb"], (1 - smoothstep(0.5, 1.2, r))
+                          * (0.6 + 0.4 * np.cos(r * 9) ** 2))
+    if k == "stroke":
+        L, wd = d["len"], d["width"]
+        w, h = int(L + 2 * wd + 4), int(abs(d["bend"]) * L + 2 * wd + 4)
+        a = np.zeros((h, w), np.float32)
+        t = np.linspace(0, 1, 40)
+        y0 = h / 2 - d["bend"] * L / 2
+        pts = np.stack([wd + 2 + t * L, y0 + d["bend"] * L * 4 * t * (1 - t)], 1)
+        cv2.polylines(a, [np.round(pts * 16).astype(np.int32)], False, 1.0,
+                      max(1, int(round(wd))), cv2.LINE_AA, 4)
+        return flat_patch(d["rgb"], a)
+    # stain: a soft blob
+    rng = np.random.default_rng(d["seed"])
+    s = int(2.5 * d["r"]) + 4
+    yy, xx = np.mgrid[0:s, 0:s].astype(np.float32)
+    r = np.hypot(xx - s / 2, yy - s / 2) / d["r"]
+    return flat_patch(d["rgb"], 1 - smoothstep(0.4, 1.1, r + 0.25 * value_noise(
+        rng, (s, s), d["r"] / 3)))
+
+
+def rotated_box(w: int, h: int, deg: float) -> tuple[float, float]:
+    a = math.radians(deg)
+    c, s = abs(math.cos(a)), abs(math.sin(a))
+    return w * c + h * s, w * s + h * c
+
+
+def overlaps(box: tuple, boxes: list[tuple]) -> bool:
+    x0, y0, x1, y1 = box
+    return any(x0 < b[2] and b[0] < x1 and y0 < b[3] and b[1] < y1 for b in boxes)
+
+
+def paste(rgb: np.ndarray, col: np.ndarray, alpha: np.ndarray, centre, deg: float,
+          opacity: float) -> None:
+    """Alpha-blend a patch, turned by `deg` about its centre, at `centre`."""
+    h, w = alpha.shape
+    M = cv2.getRotationMatrix2D((w / 2 - 0.5, h / 2 - 0.5), -deg, 1.0)
+    M[:, 2] += np.array(centre) - [w / 2 - 0.5, h / 2 - 0.5]
+    H, W = rgb.shape[:2]
+    a = cv2.warpAffine(alpha, M, (W, H), flags=cv2.INTER_LINEAR) * opacity
+    c = cv2.warpAffine(np.ascontiguousarray(col), M, (W, H), flags=cv2.INTER_LINEAR)
+    rgb *= 1 - a[..., None]
+    rgb += c * a[..., None]
+
+
+def place_mark(m: dict, ink: tuple, sym: tuple, corners: np.ndarray, fr: Frame,
+               wood_regions: set, keep_out: list, place: np.random.Generator) -> None:
+    """Set `m["offset"]`: the crop lies in one wood region, clear of the
+    other marks, inside the frame (a `cut` mark: up to 40 % of its symbol
+    outside). Left None when nothing fits."""
+    W, H = fr.W, fr.H
+    sw, sh = sym[2] - sym[0], sym[3] - sym[1]
+    for _ in range(200):
+        if m["cut"]:
+            ox = place.uniform(-sym[0] - 0.4 * sw, W - sym[2] + 0.4 * sw)
+            oy = place.uniform(-sym[1] - 0.4 * sh, H - sym[3] + 0.4 * sh)
+        else:
+            if ink[2] - ink[0] >= W or ink[3] - ink[1] >= H:
+                return
+            ox = place.uniform(-ink[0], W - ink[2])
+            oy = place.uniform(-ink[1], H - ink[3])
+        ox, oy = int(ox), int(oy)
+        box = (ink[0] + ox, ink[1] + oy, ink[2] + ox, ink[3] + oy)
+        if overlaps(box, keep_out):
+            continue
+        # the symbol's own box decides the region (a cut box may leave the frame)
+        sb = np.array([[sym[0], sym[1]], [sym[2], sym[1]], [sym[2], sym[3]],
+                       [sym[0], sym[3]]]) + [ox, oy]
+        regs = set(fr.region(sb).tolist())
+        if len(regs) != 1 or not regs <= wood_regions:
+            continue
+        m["offset"] = [ox, oy]
+        return
+
+
+def render_scene(sp: dict, patch_dir: Path | None = None) -> dict:
+    """Frame image and the corners of every mark. Mark and distractor
+    positions missing from the record are chosen here (seeded) and stored
+    in it; marks and distractors without room are removed from it, so the
+    record renders the same frame again."""
+    W, H = sp["frame"]
+    rng = np.random.default_rng(sp["render_seed"])
+    place = np.random.default_rng(sp["place_seed"])
+    fr = Frame(sp)
+    reg, dist = fr.maps()
+    rgb = np.zeros((H, W, 3), np.float32)
+    for i, s in enumerate(sp["surfaces"]):
+        m = reg == i
+        if m.any():
+            rgb[m] = surface_rgb(s, (H, W), sp["unit"], rng)[m]
+    if sp["edges"]:
+        rgb *= (1 - sp["seam"] * np.exp(-(dist / 1.5) ** 2))[..., None]
+    wood_regions = {i for i, s in enumerate(sp["surfaces"]) if s["kind"] in ("end", "side")}
+
+    keep_out: list[tuple] = []
+    marks = []
+    for m in sp["marks"]:
+        p = m["params"]
+        r = render(p, patch_dir, transfer=True)
+        ratio = r["ratio"]
+        h, w = ratio.shape[:2]
+        corners = np.array(r["truth"]["corners"])
+        ys, xs = np.nonzero(np.abs(ratio - 1).max(2) > 0.03)
+        pad = SCENE_KEEP_OUT * p["ppm"]
+        sym = (*corners.min(0), *corners.max(0))
+        ink = (min(xs.min(), sym[0]) - pad, min(ys.min(), sym[1]) - pad,
+               max(xs.max(), sym[2]) + pad, max(ys.max(), sym[3]) + pad) if len(xs) \
+            else (sym[0] - pad, sym[1] - pad, sym[2] + pad, sym[3] + pad)
+        if m["offset"] is None:
+            place_mark(m, ink, sym, corners, fr, wood_regions, keep_out, place)
+        if m["offset"] is None:
+            continue
+        ox, oy = m["offset"]
+        keep_out.append((ink[0] + ox, ink[1] + oy, ink[2] + ox, ink[3] + oy))
+        x0, y0, x1, y1 = max(0, ox), max(0, oy), min(W, ox + w), min(H, oy + h)
+        if x0 < x1 and y0 < y1:
+            rgb[y0:y1, x0:x1] *= ratio[y0 - oy:y1 - oy, x0 - ox:x1 - ox]
+        quad = corners + [ox, oy]
+        inside = bool(quad.min() >= 0 and quad[:, 0].max() <= W - 1
+                      and quad[:, 1].max() <= H - 1)
+        marks.append({"text": p["text"], "size": p["size"], "polarity": p["polarity"],
+                      "style": p["style"], "ppm": p["ppm"], "cut": not inside,
+                      "corners": np.round(quad, 2).tolist()})
+    sp["marks"] = [m for m in sp["marks"] if m["offset"] is not None]
+
+    for d in sp["distractors"]:
+        col, alpha = distractor_patch(d)
+        bw, bh = rotated_box(alpha.shape[1], alpha.shape[0], d["deg"])
+        if d["pos"] is None:
+            for _ in range(50):
+                cx, cy = place.uniform(0, W), place.uniform(0, H)
+                if not overlaps((cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2), keep_out):
+                    d["pos"] = [round(float(cx), 1), round(float(cy), 1)]
+                    break
+        if d["pos"] is not None:
+            paste(rgb, col, alpha, d["pos"], d["deg"], d["opacity"])
+    sp["distractors"] = [d for d in sp["distractors"] if d["pos"] is not None]
+    return {"image": photometry(rgb, sp["camera"], rng), "marks": marks}
+
+
+def write_scene(out: Path, name: str, sp: dict, patch_dir: Path | None) -> dict:
+    r = render_scene(sp, patch_dir)
+    file = f"{name}.jpg"
+    write_img(out / file, r["image"], sp["camera"]["jpeg"])
+    rec = {"params": sp, "file": file, "frame": sp["frame"], "marks": r["marks"]}
+    (out / f"{name}.json").write_text(json.dumps(rec, separators=(",", ":")) + "\n",
+                                      encoding="utf-8")
+    return rec
+
+
+def write_scene_tsv(out: Path, recs: list[tuple[str, dict]]) -> None:
+    """index.tsv: file, marks, sizes, cut marks, seed; marks.tsv: one row
+    per mark (file, text, size, corners)."""
+    (out / "index.tsv").write_text("file\tmarks\tsizes\tcut\tseed\n" + "".join(
+        f"{r['file']}\t{len(r['marks'])}\t{','.join(m['size'] for m in r['marks'])}\t"
+        f"{sum(m['cut'] for m in r['marks'])}\t"
+        f"{r['params']['seed'][0]}:{r['params']['seed'][1]}\n"
+        for _, r in recs), encoding="utf-8")
+    (out / "marks.tsv").write_text("file\ttext\tsize\tcorners\n" + "".join(
+        f"{r['file']}\t{m['text']}\t{m['size']}\t"
+        f"{' '.join(f'{x:.1f},{y:.1f}' for x, y in m['corners'])}\n"
+        for _, r in recs for m in r["marks"]), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------
@@ -831,10 +1246,45 @@ def sample_centres(img: np.ndarray, centres: np.ndarray) -> np.ndarray:
                      borderMode=cv2.BORDER_REPLICATE)
 
 
+def check_scenes(run: Path, recs: list[Path], reader: Path, jobs: int) -> int:
+    """Scenes: the reader (`--multi`, 10 s per frame) reads each frame;
+    every text it reads must be one of the frame's marks."""
+    files = [str(run / json.loads(f.read_text(encoding="utf-8"))["file"]) for f in recs]
+    n = max(1, min(jobs, len(files)))
+    procs = [subprocess.Popen([str(reader), *files[i::n], "--json", "--multi",
+                               "--budget", "10", "--jobs", "1"], stdout=subprocess.PIPE)
+             for i in range(n)]
+    texts: dict[str, list[str]] = {}
+    for proc in procs:
+        out, _ = proc.communicate()
+        if proc.returncode not in (0, 1):
+            print(f"reader failed: exit {proc.returncode}")
+            return 2
+        for r in json.loads(out):
+            got = [r["text"]] if r["decoded"] else []
+            got += [m["text"] for m in r.get("more_symbols", []) if m.get("decoded")]
+            texts[Path(r["file"]).stem] = got
+    marks = read = 0
+    false = []
+    for f in recs:
+        want = [m["text"] for m in json.loads(f.read_text(encoding="utf-8"))["marks"]]
+        got = texts.get(f.stem, [])
+        marks += len(want)
+        read += sum(t in got for t in want)
+        false += [f"{f.stem}: {t!r}" for t in got if t not in want]
+    print(f"scenes: {len(recs)} frames, {read} / {marks} marks read, "
+          f"{len(false)} texts not in the labels")
+    for w in false[:20]:
+        print("  " + w)
+    return 1 if false else 0
+
+
 def check(run: Path, reader: Path, jobs: int) -> int:
     """C5: clean render sampled at the true centres gives the matrix.
-    C4: every clean render decodes to its text."""
+    C4: every clean render decodes to its text. Scene runs: `check_scenes`."""
     recs = sorted(run.glob("[0-9]*.json"))
+    if recs and "marks" in json.loads(recs[0].read_text(encoding="utf-8")):
+        return check_scenes(run, recs, reader, jobs)
     bad_modules = 0
     bad_files = []
     for f in recs:
@@ -1158,6 +1608,8 @@ def main() -> int:
                     help="folder of wood photo patches (optional index.tsv: file, ppm); "
                     "half the samples use one")
     ap.add_argument("--params", type=Path, help="render this JSON record again")
+    ap.add_argument("--scene", metavar="WxH",
+                    help="frames of W x H pixels with 0-3 marks and distractors")
     ap.add_argument("--preview", action="store_true",
                     help="write review.html (style review and blind test)")
     ap.add_argument("--real", type=Path, metavar="TSV",
@@ -1174,6 +1626,10 @@ def main() -> int:
         ap.error("--out is needed")
     if args.params:
         p = json.loads(args.params.read_text(encoding="utf-8"))["params"]
+        if "frame" in p:
+            rec = write_scene(args.out, args.params.stem, p, args.patches)
+            write_scene_tsv(args.out, [(args.params.stem, rec)])
+            return 0
         rec = write_sample(args.out, args.params.stem, p, args.patches)
         write_tsv(args.out, [(args.params.stem, rec)])
         return 0
@@ -1185,6 +1641,17 @@ def main() -> int:
         STYLE_WEIGHTS.update({s: 1.0 for s in styles})
     patches = load_patches(args.patches) if args.patches else {}
     recs = []
+    if args.scene:
+        W, H = (int(v) for v in args.scene.lower().split("x"))
+        for i in range(args.start, args.start + args.count):
+            rng = np.random.default_rng([args.seed, i])
+            sp = sample_scene_frame(rng, [args.seed, i], W, H, styles, patches)
+            name = f"{i:06d}"
+            recs.append((name, write_scene(args.out, name, sp, args.patches)))
+        write_scene_tsv(args.out, recs)
+        print(f"{len(recs)} frames, {sum(len(r['marks']) for _, r in recs)} marks "
+              f"in {args.out}")
+        return 0
     for i in range(args.start, args.start + args.count):
         rng = np.random.default_rng([args.seed, i])
         p = sample_params(rng, [args.seed, i], styles, patches)
