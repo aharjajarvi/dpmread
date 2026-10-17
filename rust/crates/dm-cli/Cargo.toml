@@ -11,6 +11,10 @@ repository.workspace = true
 name = "dpmread"
 path = "src/main.rs"
 
+[features]
+# module classifier on the best failed grid fits (`dm-reader/ml`)
+ml = ["dm-reader/ml"]
+
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
 dm-reader = { path = "../dm-reader" }

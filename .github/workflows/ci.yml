@@ -58,8 +58,10 @@ jobs:
           workspaces: rust
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy -p dm-reader -p dm-cli --features ml --all-targets --locked -- -D warnings
       # fixture tests are #[ignore]d (private data); the list shows what ran
       - run: cargo test --workspace --locked
+      - run: cargo test -p dm-reader --features ml --locked --lib "ml::"
       - run: cargo build --release --locked -p dm-cli -p dm-gui
       - name: no C/C++ run-time DLL
         if: runner.os == 'Windows'

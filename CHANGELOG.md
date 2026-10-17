@@ -18,6 +18,11 @@ versions may change command-line flags and the JSON output.
 - `--dump-fits DIR`: write each image's grid fits (the one that read and
   the best failed ones) with module centres and the symbol resampled
   through the fit, for training a module classifier.
+- Cargo feature `ml` (`dm-cli`, `dm-reader`; off by default): when every
+  grid attempt fails, the best three failed fits are classified again by
+  a trained module classifier (new crate `dm-ml`, tract, weights
+  embedded) and decoded with the same error correction.
+  `--no-classifier` turns it off.
 - `tools/agreement.py`: module agreement of known texts with the symbol
   in an image, for checking ground-truth labels. Fits the grid on the
   finder and timing pattern only, then scores every candidate text

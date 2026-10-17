@@ -100,6 +100,9 @@ fi
 
 step "clippy"
 cargo clippy --workspace --all-targets -- -D warnings
+# the module classifier hook builds only with the feature `ml`
+cargo clippy -p dm-reader -p dm-cli --features ml --all-targets -- -D warnings
+cargo test -p dm-reader --features ml --lib ml::
 
 if [ $FAST = 1 ]; then
     # advisories need the network; --quick and the full run check them

@@ -95,6 +95,7 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--matrix` | print the sampled module matrix |
 | `--debug DIR` | save the enhancement variants and an annotated image |
 | `--dump-fits DIR` | save each image's grid fits (module centres and the symbol resampled through the fit), for training a module classifier |
+| `--no-classifier` | do not run the module classifier on failed fits (builds with `--features ml` only) |
 
 Exit code: 0 if every image decoded, 1 if an image did not decode or
 could not be read, 2 on invalid options.
@@ -112,6 +113,7 @@ Linux:
 # Debian / Ubuntu: sudo apt install cmake g++   (plus rustup)
 cd rust
 cargo build --release      # rust/target/release/dpmread, dpmread-gui
+cargo build --release -p dm-cli --features ml   # dpmread with the module classifier
 ```
 
 The binaries link only against glibc and the C++ runtime; the GUI loads

@@ -1,0 +1,12 @@
+[package]
+name = "dm-ml"
+description = "Module classifier: per-module dark / light probabilities of a grid fit (cargo feature `ml` of dm-reader)."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+dm-imgproc = { path = "../dm-imgproc" }
+tract-onnx = { version = "0.23.9", default-features = false }

@@ -151,6 +151,16 @@ light). Material for training and checking a module classifier; the read
 itself is unchanged. Images with the same name in different folders
 overwrite each other's files.
 
+**Module classifier** (cargo feature `ml`, off by default): when every
+grid attempt has failed, the three best failed fits are classified again
+by a small convolutional network (33 k weights, crate `dm-ml`, run with
+tract) instead of the threshold, on the `--dump-fits` input, and decoded
+with the same soft-erasure Reed-Solomon. Fits with more than 25 % wrong
+finder / timing modules are skipped. Reads that succeed without it are
+unchanged; the report names the sampling "module classifier". One call
+takes about 2 ms at 10×10, 9 ms at 24×24 and 47 ms at 64×64 (one
+thread, Ryzen 7 5700X). Training code: `ml/`.
+
 ## Desktop GUI
 
 `dpmread-gui`:

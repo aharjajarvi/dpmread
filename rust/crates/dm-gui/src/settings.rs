@@ -72,6 +72,7 @@ impl Settings {
             progress: None,
             analyse: true,
             fit_inputs: false,
+            classifier: true,
         }
     }
 
