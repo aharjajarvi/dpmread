@@ -8,9 +8,10 @@ use std::time::Instant;
 use dm_codec::decode_codewords;
 use dm_ecc::rs_decode_symbol;
 use dm_grid::{
-    FitMap, GridFit, GridRead, NearMiss, codewords_from_bits, fixed_pattern_too_damaged,
-    near_miss_key, plausible, symbol_input,
+    FitMap, GridFit, GridRead, NearMiss, anti_transposed, codewords_from_bits,
+    fixed_pattern_too_damaged, near_miss_key, plausible, symbol_input,
 };
+use dm_imgproc::{GrayF32, Image};
 use dm_ml::Classifier;
 use dm_symbol::{Geometry, all_symbols, geometry};
 
@@ -65,52 +66,36 @@ pub(crate) fn read_fits<'a>(
     (None, calls)
 }
 
-/// A fit turned about its anti-diagonal: module (r, c) becomes
-/// (cols - 1 - c, rows - 1 - r) of a square symbol. The finder L and the
-/// timing pattern map onto themselves, so a fit read in this frame has a
-/// perfect fixed pattern but mirrored data; the corner order becomes
-/// br, tr, tl, bl and the mirrored flag flips.
-fn anti_transpose(
-    d: &NearMiss,
-    n: usize,
-    bits: &[u8],
-    conf: &[f64],
-) -> (NearMiss, Vec<u8>, Vec<f64>) {
-    let at = |r: usize, c: usize| (n - 1 - c) * n + (n - 1 - r);
-    let idx: Vec<usize> = (0..n * n).map(|i| at(i / n, i % n)).collect();
-    let mut t = d.clone();
-    let q = d.quad;
-    t.quad = [q[2], q[1], q[0], q[3]];
-    t.axes = d.axes.as_ref().map(|(u, v)| {
-        let nu = (0..n).map(|i| n as f64 - v[n - 1 - i]).collect();
-        let nv = (0..n).map(|j| n as f64 - u[n - 1 - j]).collect();
-        (nu, nv)
-    });
-    t.mirrored = !d.mirrored;
-    (
-        t,
-        idx.iter().map(|&k| bits[k]).collect(),
-        idx.iter().map(|&k| conf[k]).collect(),
-    )
-}
-
 fn read_fit(v: &Variant, d: &NearMiss, g: &'static Geometry) -> Option<GridRead> {
     let map = FitMap::new(&d.quad, g.rows, g.cols, d.axes.as_ref())?;
     let input = symbol_input(&v.img, &map, g.rows, g.cols);
     let p = Classifier::embedded().p_dark(&input, g.rows, g.cols)?;
-    let bits: Vec<u8> = p.iter().map(|&p| u8::from(p > 0.5)).collect();
-    let conf: Vec<f64> = p.iter().map(|&p| (p as f64 - 0.5).abs() * 2.0).collect();
-    if let Some(r) = decode(d, g, bits.clone(), conf.clone()) {
-        return Some(r);
-    }
-    if g.rows != g.cols {
-        return None;
-    }
-    let (t, bits, conf) = anti_transpose(d, g.rows, &bits, &conf);
-    decode(&t, g, bits, conf)
+    read_probs(d, g, Image::from_vec(g.cols, g.rows, p))
 }
 
-fn decode(d: &NearMiss, g: &'static Geometry, bits: Vec<u8>, conf: Vec<f64>) -> Option<GridRead> {
+/// Decode the classifier's dark probabilities (rows x cols) in the fit's
+/// frame, then, for a square symbol, in its anti-transposed frame
+/// (`dm_grid::anti_transposed`).
+fn read_probs(d: &NearMiss, g: &'static Geometry, p: GrayF32) -> Option<GridRead> {
+    let mut fit = GridFit::new(g, d.quad, d.score);
+    fit.axes = d.axes.clone();
+    if let Some(r) = decode(fit.clone(), &p, d.mirrored, d.qz) {
+        return Some(r);
+    }
+    let (t, p) = anti_transposed(&fit, &p)?;
+    decode(t, &p, !d.mirrored, d.qz)
+}
+
+/// Bit = p > 0.5, confidence = abs(p - 0.5) x 2; the weak-RS and
+/// `plausible` checks of `try_fit_values`.
+fn decode(mut fit: GridFit, p: &GrayF32, mirrored: bool, qz: bool) -> Option<GridRead> {
+    let g = fit.geom;
+    let bits: Vec<u8> = p.data.iter().map(|&p| u8::from(p > 0.5)).collect();
+    let conf: Vec<f64> = p
+        .data
+        .iter()
+        .map(|&p| (p as f64 - 0.5).abs() * 2.0)
+        .collect();
     let fixed_errors = bits
         .iter()
         .zip(&g.fixed_mask)
@@ -126,17 +111,15 @@ fn decode(d: &NearMiss, g: &'static Geometry, bits: Vec<u8>, conf: Vec<f64>) -> 
     if dec.data.is_empty() || !plausible(&dec) {
         return None;
     }
-    let mut fit = GridFit::new(g, d.quad, d.score);
-    fit.axes = d.axes.clone();
     fit.bits = Some(bits);
     fit.conf = Some(conf);
     fit.fixed_errors = fixed_errors;
-    let qz = if d.qz { "" } else { ", no-quiet-zone" };
+    let qz = if qz { "" } else { ", no-quiet-zone" };
     Some(GridRead {
         fit,
         rs,
         dec,
-        mirrored: d.mirrored,
+        mirrored,
         note: format!("module classifier{qz}"),
     })
 }
@@ -144,12 +127,15 @@ fn decode(d: &NearMiss, g: &'static Geometry, bits: Vec<u8>, conf: Vec<f64>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dm_symbol::build_matrix;
 
-    #[test]
-    fn anti_transpose_keeps_the_fixed_pattern_and_undoes_itself() {
-        let g = geometry_of("12x12").unwrap();
-        let n = g.rows;
-        let d = NearMiss {
+    /// "88482" as a 12x12 (`datamatrix_gen.py`).
+    const CODEWORDS: [u8; 12] = [
+        0xDA, 0xB2, 0x33, 0x81, 0x73, 0xB6, 0xF1, 0x9A, 0xCE, 0x96, 0x70, 0xCB,
+    ];
+
+    fn near_miss(g: &Geometry) -> NearMiss {
+        NearMiss {
             score: 3.0,
             size: g.name(),
             qz: true,
@@ -160,31 +146,42 @@ mod tests {
             measured_size: g.name(),
             pitch_drift_modules: None,
             quad: [[0.0, 0.0], [60.0, 0.0], [60.0, 60.0], [0.0, 60.0]],
-            axes: Some((
-                (0..n).map(|c| c as f64 + 0.4).collect(),
-                (0..n).map(|r| r as f64 + 0.6).collect(),
-            )),
+            axes: None,
             mirrored: false,
             bits: None,
             conf: None,
-        };
-        let conf: Vec<f64> = (0..n * n).map(|i| i as f64).collect();
-        let (t, bits, c2) = anti_transpose(&d, n, &g.fixed_val, &conf);
-        let fixed_ok = |b: &[u8]| (0..n * n).all(|i| !g.fixed_mask[i] || b[i] == g.fixed_val[i]);
-        assert!(fixed_ok(&bits));
-        assert!(t.mirrored);
-        assert_eq!(t.quad[0], d.quad[2]);
-        // module (r, c) moves to (n - 1 - c, n - 1 - r)
-        assert_eq!(c2[0], conf[n * n - 1]);
-        assert_eq!(c2[1], conf[(n - 2) * n + n - 1]);
-        let (u, v) = t.axes.as_ref().unwrap();
-        assert!((u[0] - 0.4).abs() < 1e-9 && (v[0] - 0.6).abs() < 1e-9);
-        let (back, _, c3) = anti_transpose(&t, n, &bits, &c2);
-        assert_eq!(back.quad, d.quad);
-        let (bu, bv) = back.axes.as_ref().unwrap();
-        let (du, dv) = d.axes.as_ref().unwrap();
-        let close = |a: &[f64], b: &[f64]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
-        assert!(close(bu, du) && close(bv, dv));
-        assert_eq!(c3, conf);
+        }
+    }
+
+    /// Dark probabilities of the symbol, read in the fit's frame or in the
+    /// anti-transposed one.
+    fn probs(g: &Geometry, anti: bool) -> GrayF32 {
+        let n = g.rows;
+        let m = build_matrix(&CODEWORDS, &g.sym);
+        let data = (0..n * n)
+            .map(|i| {
+                if anti {
+                    (n - 1 - i % n) * n + (n - 1 - i / n)
+                } else {
+                    i
+                }
+            })
+            .map(|k| if m[k] == 1 { 0.9 } else { 0.1 })
+            .collect();
+        Image::from_vec(n, n, data)
+    }
+
+    #[test]
+    fn reads_the_fit_frame_and_the_anti_transposed_frame() {
+        let g = geometry_of("12x12").unwrap();
+        let d = near_miss(g);
+        let r = read_probs(&d, g, probs(g, false)).unwrap();
+        assert_eq!(r.dec.data, b"88482");
+        assert!(!r.mirrored);
+        assert_eq!(r.fit.quad, d.quad);
+        let r = read_probs(&d, g, probs(g, true)).unwrap();
+        assert_eq!(r.dec.data, b"88482");
+        assert!(r.mirrored);
+        assert_eq!(r.fit.quad[0], d.quad[2]);
     }
 }
