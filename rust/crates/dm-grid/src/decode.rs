@@ -283,7 +283,7 @@ fn grid_pass(
                 }
             }
             if let Some(d) = diag.as_deref_mut() {
-                record_near_miss(d, sampler, &fit, rs_, qz);
+                record_near_miss(d, sampler, &fit, rs_, qz, mirror);
             }
             if let Some(r) = region_read(sampler, &fit, deadline, mirror, note) {
                 return Some(r);
@@ -394,6 +394,11 @@ fn warp_pass(
                         outside_dark: 0.0,
                         measured_size: gm.name(),
                         pitch_drift_modules: Some(round2(drift)),
+                        quad: fit.quad,
+                        axes: fit.axes.clone(),
+                        mirrored: mirror,
+                        bits: fit.bits.clone(),
+                        conf: fit.conf.clone(),
                     });
                 }
                 if let Some(r) = region_read(sampler, &fit, deadline, mirror, &format!(", {note}"))
@@ -510,6 +515,7 @@ fn record_near_miss(
     fit: &GridFit,
     score: f64,
     qz: bool,
+    mirrored: bool,
 ) {
     let (gm, rq) = (fit.geom, &fit.quad);
     let est = interior_modules(sampler, rq);
@@ -537,6 +543,11 @@ fn record_near_miss(
                 est.0.round_ties_even() as i64
             ),
             pitch_drift_modules: None,
+            quad: fit.quad,
+            axes: fit.axes.clone(),
+            mirrored,
+            bits: fit.bits.clone(),
+            conf: fit.conf.clone(),
         });
     }
 }

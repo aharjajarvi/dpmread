@@ -10,7 +10,7 @@ use clap::{Parser, ValueEnum};
 use dm_reader::timing::STAGE_NAMES;
 use dm_reader::{
     Engines, Polarity, ReadOptions, ReadResult, Runner, Timings, ZXING_AVAILABLE, collect_inputs,
-    default_jobs, parse_sizes, printable, read_image, report_text, to_json,
+    default_jobs, parse_sizes, printable, read_image, report_text, to_json, write_fit_dump,
 };
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -66,6 +66,10 @@ struct Args {
     /// RS statistics and grades (faster; the text is the same)
     #[arg(long)]
     no_analysis: bool,
+    /// write each image's grid fits (the one that read, the best failed
+    /// ones) with module centres and module classifier input here
+    #[arg(long, value_name = "DIR")]
+    dump_fits: Option<PathBuf>,
 }
 
 /// One stderr line per image with `DPMREAD_TIMINGS` set (P4b.7 profiling):
@@ -144,13 +148,21 @@ fn main() -> ExitCode {
         multi: args.multi,
         progress: None,
         analyse: !args.no_analysis,
+        fit_inputs: args.dump_fits.is_some(),
     };
     let runner = Runner::new(args.jobs.max(1));
     let mut results = Vec::new();
     let mut failed = false;
     for path in collect_inputs(&inputs) {
         match read_image(&path, &opts, &runner) {
-            Ok(res) => {
+            Ok(mut res) => {
+                if let Some(dir) = &args.dump_fits {
+                    if let Err(e) = write_fit_dump(dir, &res) {
+                        eprintln!("{}: --dump-fits: {e}", path.display());
+                        failed = true;
+                    }
+                    res.fits.clear();
+                }
                 if !args.json {
                     print!("{}", report_text(&res, args.matrix));
                 }

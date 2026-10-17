@@ -71,6 +71,7 @@ impl Settings {
             multi: self.multi,
             progress: None,
             analyse: true,
+            fit_inputs: false,
         }
     }
 

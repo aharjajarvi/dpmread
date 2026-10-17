@@ -2,6 +2,7 @@
 
 pub mod annotate;
 pub mod charset;
+pub mod fitdump;
 pub mod multi;
 pub mod read;
 pub mod report;
@@ -13,9 +14,10 @@ pub use dm_grid::timing;
 
 pub use annotate::{annotated, save_annotated, save_variants};
 pub use charset::to_text;
+pub use fitdump::{write_fit_dump, write_npy};
 pub use read::{
-    Engines, IMAGE_EXT, Polarity, Progress, ReadNearMiss, ReadOptions, ReadResult, Timings,
-    collect_inputs, fit_quad, parse_sizes, read_image,
+    Engines, FitInput, IMAGE_EXT, MAX_FAILED_FITS, Polarity, Progress, ReadNearMiss, ReadOptions,
+    ReadResult, Timings, collect_inputs, fit_quad, parse_sizes, read_image,
 };
 pub use report::{
     hex_spaced, hexrows, matrix_art, printable, py_float, report_text, to_dict, to_json,

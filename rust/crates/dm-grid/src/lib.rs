@@ -10,6 +10,7 @@ pub mod deadline;
 pub mod decode;
 pub mod dots;
 pub mod fit;
+pub mod mlinput;
 pub mod nearmiss;
 pub mod np;
 pub mod quads;
@@ -29,6 +30,7 @@ pub use crate::fit::{
     GridFit, Mode, WEAK_RS_ECC, WEAK_RS_MAX_FIXED_ERRORS, classify, codewords_from_bits,
     fixed_pattern_too_damaged, plausible, try_fit, try_fit_values, zscore,
 };
+pub use crate::mlinput::{FitMap, INPUT_MARGIN, INPUT_PPM, symbol_input};
 pub use crate::nearmiss::{
     NearMiss, OUTSIDE_BUSY, SIZE_CHECK_PX, interior_modules, near_miss_key, outside_dark,
     size_agree,

@@ -15,6 +15,9 @@ versions may change command-line flags and the JSON output.
 - `--no-analysis` (and `analyse` in `dm-ffi` options): after a zxing
   read, skip the grid fit that fills in the symbol, error-correction and
   quality fields.
+- `--dump-fits DIR`: write each image's grid fits (the one that read and
+  the best failed ones) with module centres and the symbol resampled
+  through the fit, for training a module classifier.
 - `tools/agreement.py`: module agreement of known texts with the symbol
   in an image, for checking ground-truth labels. Fits the grid on the
   finder and timing pattern only, then scores every candidate text

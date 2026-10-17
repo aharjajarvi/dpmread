@@ -94,6 +94,7 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--jobs N` | worker threads (results do not depend on it) |
 | `--matrix` | print the sampled module matrix |
 | `--debug DIR` | save the enhancement variants and an annotated image |
+| `--dump-fits DIR` | save each image's grid fits (module centres and the symbol resampled through the fit), for training a module classifier |
 
 Exit code: 0 if every image decoded, 1 if an image did not decode or
 could not be read, 2 on invalid options.

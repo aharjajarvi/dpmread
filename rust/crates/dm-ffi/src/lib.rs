@@ -181,6 +181,7 @@ fn to_read_options(o: &Options) -> dm_reader::ReadOptions {
         multi: o.multi,
         progress: None,
         analyse: o.analyse,
+        fit_inputs: false,
     }
 }
 
