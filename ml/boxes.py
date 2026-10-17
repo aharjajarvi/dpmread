@@ -115,7 +115,7 @@ def merge(args) -> int:
                             "corners": r["corners"], "text": "", "size": "",
                             "polarity": ""})
     with open(args.out, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, FIELDS)
+        w = csv.DictWriter(f, FIELDS, lineterminator="\n")
         w.writeheader()
         w.writerows(out)
     by = {s: sum(o["source"] == s for o in out) for s in ("manifest", "reader", "review")}
