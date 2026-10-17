@@ -201,11 +201,18 @@ fn linspace(start: f64, stop: f64, num: usize) -> Vec<f64> {
 const SNAP_STEPS: usize = 46; // profile samples across a side
 const SNAP_ALONG: usize = 25; // profiles averaged along a side
 const SNAP_D: usize = 3; // half the edge width in samples
+/// Largest quad side a snap pass accepts, in multiples of the image's long
+/// side. A degenerate seed can snap to nearly parallel lines whose
+/// intersections lie far outside the image; the next pass would blur with
+/// `sigma = side / 100` and run for hours (CORE-129).
+const SNAP_MAX_EXT: f32 = 2.0;
 
 /// Fit every side of a rough quad to the symbol edge: at 25 places along
 /// the side (and 9 tilts of +-6 degrees) find the strongest dark -> light
 /// drop along the outward normal, then intersect neighbouring lines.
 /// `inward` looks for the strongest light -> dark rise instead.
+/// A pass whose quad is not finite or larger than `SNAP_MAX_EXT` times the
+/// image ends the snap with the quad before it.
 pub fn snap_quad(gray: &Gray8, quad: &Quad, passes: usize, inward: bool) -> Quad {
     let mut q = order_quad(quad);
     let along_t = linspace(-0.8, 0.8, SNAP_ALONG);
@@ -218,8 +225,15 @@ pub fn snap_quad(gray: &Gray8, quad: &Quad, passes: usize, inward: bool) -> Quad
         .collect();
     let n = SNAP_STEPS * SNAP_ALONG;
     let (mut xs, mut ys) = (vec![0f32; n], vec![0f32; n]);
+    let max_ext = SNAP_MAX_EXT * gray.width.max(gray.height) as f32;
+    let ext_of = |q: &Quad| norm2_f32(sub(q[1], q[0])).max(norm2_f32(sub(q[3], q[0])));
+    let plausible =
+        |q: &Quad| q.as_flattened().iter().all(|v| v.is_finite()) && ext_of(q) <= max_ext;
     for _ in 0..passes {
-        let ext = norm2_f32(sub(q[1], q[0])).max(norm2_f32(sub(q[3], q[0])));
+        if !plausible(&q) {
+            break;
+        }
+        let ext = ext_of(&q);
         let sigma = ((ext / 100.0) as f64).max(1.0);
         let blurred = gaussian_blur_u8(gray, sigma);
         let dark = Image::from_vec(
@@ -287,12 +301,16 @@ pub fn snap_quad(gray: &Gray8, quad: &Quad, passes: usize, inward: bool) -> Quad
             }
             lines.push((best.1, [best.2[0] as f64, best.2[1] as f64]));
         }
-        q = std::array::from_fn(|k| {
+        let next: Quad = std::array::from_fn(|k| {
             let (p1, d1) = lines[(k + 3) % 4];
             let (p2, d2) = lines[k];
             let x = line_intersect(p1, d1, p2, d2);
             [x[0] as f32, x[1] as f32]
         });
+        if !plausible(&next) {
+            break;
+        }
+        q = next;
     }
     q
 }
