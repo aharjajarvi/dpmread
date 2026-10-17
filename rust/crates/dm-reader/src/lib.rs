@@ -3,6 +3,8 @@
 pub mod annotate;
 pub mod charset;
 pub mod fitdump;
+#[cfg(feature = "ml")]
+pub mod ml;
 pub mod multi;
 pub mod read;
 pub mod report;

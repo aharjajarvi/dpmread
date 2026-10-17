@@ -12,12 +12,15 @@ default = ["zxing"]
 # zxing-cpp 0.5.1 bundles zxing-cpp C++ 3.0.2 (0.5.0 with 3.0.0 is yanked);
 # Python reference: python-zxing-cpp 3.0.0. No DataMatrix code differs.
 zxing = ["dep:zxingcpp"]
+# module classifier on the best failed grid fits (dm-ml, tract)
+ml = ["dep:dm-ml"]
 
 [dependencies]
 dm-codec = { path = "../dm-codec" }
 dm-ecc = { path = "../dm-ecc" }
 dm-grid = { path = "../dm-grid" }
 dm-imgproc = { path = "../dm-imgproc" }
+dm-ml = { path = "../dm-ml", optional = true }
 dm-symbol = { path = "../dm-symbol" }
 encoding_rs = "0.8.42"
 # PNG output of --debug

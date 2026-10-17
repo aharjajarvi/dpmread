@@ -90,6 +90,10 @@ pub struct ReadOptions {
     /// failed fits (`ReadResult.fits`, `--dump-fits`); does not change the
     /// read.
     pub fit_inputs: bool,
+    /// When every grid job failed, classify the best failed fits again
+    /// with the trained module classifier (cargo feature `ml`; without it
+    /// this does nothing).
+    pub classifier: bool,
 }
 
 /// Progress callback of `read_image`: `(stage, jobs done, jobs in stage)`
@@ -127,6 +131,7 @@ impl Default for ReadOptions {
             progress: None,
             analyse: true,
             fit_inputs: false,
+            classifier: true,
         }
     }
 }
@@ -275,6 +280,9 @@ pub struct Timings {
     pub grid_jobs: usize,
     /// Grid stage counters summed over the consumed grid jobs (`grid_jobs`).
     pub grid: Acc,
+    /// Module classifier (feature `ml`): wall time and calls.
+    pub ml: f64,
+    pub ml_calls: usize,
     /// `analyse_known` (after a zxing read) or `quality` (grid read).
     pub finish: f64,
 }
@@ -614,6 +622,8 @@ fn read_bgr(
     //    zxing did not read (their gray / flatten variants, not binarised);
     //    all of that with the quiet-zone template, then the ring-less retry
     let mut failed_fits: Vec<FitInput> = Vec::new();
+    #[cfg(feature = "ml")]
+    let mut ml_fits: Vec<(&Variant, NearMiss)> = Vec::new();
     if !done(&found) && opts.engines.grid {
         gvars = runner.install(|| grid_variants(bgr, invert, inverted_extra));
         tm.grid_variants = lap(&mut t);
@@ -704,6 +714,10 @@ fn read_bgr(
                 {
                     keep_fit(&mut failed_fits, f);
                 }
+                #[cfg(feature = "ml")]
+                if opts.classifier {
+                    crate::ml::keep(&mut ml_fits, v, &d);
+                }
                 if near_miss_key(Some(&d)) <= near_miss_key(res.near_miss.as_ref().map(|n| &n.nm)) {
                     return ControlFlow::Continue(());
                 }
@@ -717,6 +731,22 @@ fn read_bgr(
         });
         tm.grid_wall = lap(&mut t);
         tm.grid_busy = busy.swap(0, Ordering::Relaxed) as f64 * 1e-9;
+    }
+    // 3. module classifier on the best failed fits (feature `ml`)
+    #[cfg(feature = "ml")]
+    if found.is_empty() && !runner.stopped() {
+        let (r, calls) = crate::ml::read_fits(&ml_fits, deadline);
+        if let Some((v, r)) = r {
+            res.attempts += 1;
+            found.push(Found {
+                engine: "grid",
+                variant: v.name.clone(),
+                data: r.dec.data.clone(),
+                hit: Hit::Grid(v, Box::new(r)),
+            });
+        }
+        tm.ml_calls = calls;
+        tm.ml = lap(&mut t);
     }
 
     res.fits = failed_fits;

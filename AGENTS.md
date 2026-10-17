@@ -46,7 +46,8 @@ Detailed plans may exist outside this repository; a local, untracked
 ```fish
 rust/target/release/dpmread IMAGE_OR_FOLDER [...] [--json] [--debug DIR] \
     [--engines zxing,grid] [--budget SEC] [--jobs N] [--expect RxC] \
-    [--polarity dark|light|any] [--exhaustive] [--matrix] [--multi] [--dump-fits DIR]
+    [--polarity dark|light|any] [--exhaustive] [--matrix] [--multi] [--dump-fits DIR] \
+    [--no-classifier]                # cargo build --release -p dm-cli --features ml
 rust/target/release/dpmread-gui [IMAGE_OR_FOLDER ...]   # cargo build --release in rust/
 rust/tools/build_linux.sh            # release binaries for other distros (glibc 2.28)
 rust/tools/build_android.sh          # dm-ffi .so (arm64-v8a, x86_64) + Kotlin bindings
