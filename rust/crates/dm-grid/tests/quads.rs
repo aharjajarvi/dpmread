@@ -115,3 +115,67 @@ fn line_intersect_matches() {
     eprintln!("line_intersect: {exact}/{} bit-exact", all.len());
     assert_eq!(exact, all.len());
 }
+
+/// CORE-129: thin seed quads (zxing failures) on noise snap to nearly
+/// parallel sides whose corners lie far outside the image; the next snap
+/// pass blurred with `sigma = side / 100` and ran for hours (`--multi`).
+/// The snap chain of `grid_decode` without a quiet zone (outward, then
+/// inward on the result) must stay within twice the image.
+#[test]
+fn snap_stays_near_image() {
+    let (w, h) = (200, 150);
+    let mut s = 7u64;
+    let mut lcg = || {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (s >> 57) as u8
+    };
+    let g = Image::from_vec(w, h, (0..w * h).map(|_| lcg()).collect());
+    let seeds: [Quad; 5] = [
+        [
+            [106.3744, 55.4778],
+            [112.1056, 49.7898],
+            [121.36, 38.961],
+            [112.0024, 54.3186],
+        ],
+        [
+            [153.976, 85.8912],
+            [159.9208, 67.3536],
+            [159.3496, 70.9176],
+            [156.124, 79.0128],
+        ],
+        [
+            [131.6392, 61.944],
+            [128.1784, 51.9408],
+            [133.5232, 52.116],
+            [131.7808, 64.248],
+        ],
+        [
+            [116.9704, 63.501],
+            [129.208, 53.9538],
+            [127.2832, 56.9634],
+            [121.6912, 71.1906],
+        ],
+        [
+            [132.7024, 58.4982],
+            [127.5616, 48.8598],
+            [138.3856, 48.8238],
+            [135.9232, 65.5422],
+        ],
+    ];
+    let max_ext = 2.0 * w.max(h) as f32;
+    for seed in &seeds {
+        let sq = snap_quad(&g, seed, 2, false);
+        let si = snap_quad(&g, &sq, 2, true);
+        for q in [sq, si] {
+            assert!(
+                q.as_flattened().iter().all(|v| v.is_finite()),
+                "{seed:?} -> {q:?}"
+            );
+            let side = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).hypot(a[1] - b[1]);
+            let ext = side(q[0], q[1]).max(side(q[0], q[3]));
+            assert!(ext <= max_ext, "{seed:?} -> {q:?}, side {ext}");
+        }
+    }
+}
