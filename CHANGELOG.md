@@ -43,6 +43,10 @@ versions may change command-line flags and the JSON output.
 
 ### Fixed
 
+- Warped grid: a square symbol fitted in the frame transposed across its
+  anti-diagonal (same finder and timing pattern, mirrored data) failed
+  Reed-Solomon; that frame is now decoded too. 3 more of 163 real photos
+  read, no read lost or changed.
 - `datamatrix_gen.py`: a C40 or Text run that ended with a shifted
   character (e.g. lowercase in C40) split across the last full triple lost
   that character. 56 of 3 000 random texts were affected; all 3 000 now

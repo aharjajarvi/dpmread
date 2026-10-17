@@ -82,6 +82,9 @@ flowchart TD
      globally along each edge, so marks whose module pitch drifts across
      the symbol (uneven marking speed, curved or stretched material) are
      sampled at the real module positions instead of an evenly spaced grid;
+     a square warped grid is also decoded transposed across its
+     anti-diagonal, the one other frame with the same finder and timing
+     pattern, because the warp fit of that orientation can land elsewhere;
    - if that fails, the same steps again without assuming a quiet zone
      around the symbol (marks printed right up to an edge or a label).
 5. **Result.** The first decode that passes Reed-Solomon wins
