@@ -23,6 +23,11 @@ versions may change command-line flags and the JSON output.
   a trained module classifier (new crate `dm-ml`, tract, weights
   embedded) and decoded with the same error correction.
   `--no-classifier` turns it off.
+- `tools/synth_marks.py`: synthetic Data Matrix marks with exact ground
+  truth (module matrix, corners, module centres) for training and testing:
+  laser, ink and dot-peen styles on procedural or photo wood, scene and
+  camera effects, a seeded parameter record per image to render it again,
+  checks against the reader, and an HTML review sheet.
 - `tools/agreement.py`: module agreement of known texts with the symbol
   in an image, for checking ground-truth labels. Fits the grid on the
   finder and timing pattern only, then scores every candidate text
