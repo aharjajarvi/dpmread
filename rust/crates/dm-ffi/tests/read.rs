@@ -180,9 +180,10 @@ fn stop_ends_a_read_soon() {
     let _ = std::fs::remove_file(&path);
     assert!(out.stopped && !out.decoded);
     // well inside the 40 s budget; ~0.7 s on a desktop, more under load
-    // (other tests in parallel), so not a latency target
+    // (other tests in parallel; 5.1 s once on a CI runner, debug build),
+    // so not a latency target
     let took = ended.duration_since(stopped_at);
-    assert!(took < Duration::from_secs(5), "stop took {took:?}");
+    assert!(took < Duration::from_secs(10), "stop took {took:?}");
 }
 
 #[test]
