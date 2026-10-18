@@ -5,11 +5,13 @@
 //! grid variants of a crop around it, quiet-zone template first. The first
 //! read ends the image; otherwise the classic search runs as before.
 
+use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
 use dm_grid::{Deadline, GridRead, grid_decode_seeds};
 use dm_imgproc::{Bgr8, Gray8};
 use dm_ml::Detector;
+use dm_symbol::Symbol;
 
 use crate::read::{Polarity, ReadOptions, parse_sizes};
 use crate::runner::Runner;
@@ -51,11 +53,10 @@ pub(crate) fn first_try(
     let Some(dets) = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS) else {
         return (None, 0);
     };
-    let mut tries = 0;
+    // one job per (detection, crop variant), in that order; the runner's
+    // threads take them and the first read in job order wins
+    let mut jobs: Vec<Job> = Vec::new();
     for d in &dets {
-        if dl.expired() {
-            break;
-        }
         let (invert, both) = match opts.polarity {
             Polarity::Dark => (false, false),
             Polarity::Light => (true, false),
@@ -92,29 +93,56 @@ pub(crate) fn first_try(
             continue;
         }
         let crop = crop_bgr(bgr, x0, y0, x1 - x0, y1 - y0);
-        let gvars = runner.install(|| grid_variants(&crop, invert, both));
-        for gv in gvars {
-            if dl.expired() {
-                break;
-            }
+        for gv in runner.install(|| grid_variants(&crop, invert, both)) {
             let s = gv.scale as f32;
-            let q = d
+            let quad = d
                 .quad
                 .map(|[x, y]| [(x - x0 as f32) * s, (y - y0 as f32) * s]);
-            tries += 1;
-            if let Some(r) =
-                grid_decode_seeds(&gv.img, &dl, &[q], &[true, false], symbols.as_deref())
-            {
-                let v = Variant {
+            jobs.push(Job {
+                v: Variant {
                     name: format!("detector > {}", gv.name),
                     img: gv.img,
                     scale: gv.scale,
                     ox: x0 as f64,
                     oy: y0 as f64,
-                };
-                return (Some((v, r)), tries);
-            }
+                },
+                quad,
+                symbols: symbols.clone(),
+            });
         }
     }
-    (None, tries)
+    let mut tries = 0;
+    let mut hit = None;
+    runner.run(
+        &jobs,
+        dl.at,
+        |j| {
+            grid_decode_seeds(
+                &j.v.img,
+                &dl,
+                &[j.quad],
+                &[true, false],
+                j.symbols.as_deref(),
+            )
+        },
+        |i, r| {
+            tries += 1;
+            match r {
+                Some(r) => {
+                    hit = Some((jobs[i].v.clone(), r));
+                    ControlFlow::Break(())
+                }
+                None => ControlFlow::Continue(()),
+            }
+        },
+    );
+    (hit, tries)
+}
+
+/// One first-try attempt: a crop variant (offsets in original pixels), the
+/// detection's quad in its pixels and the sizes to try.
+struct Job {
+    v: Variant,
+    quad: [[f32; 2]; 4],
+    symbols: Option<Vec<Symbol>>,
 }
