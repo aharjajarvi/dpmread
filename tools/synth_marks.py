@@ -70,6 +70,7 @@ STYLES = ("laser_dots", "laser_fill", "ink", "peen", "flat")
 DEFAULT_STYLES = ("laser_dots", "laser_fill", "ink", "peen")
 # default share of each style; real marks so far are all laser marks
 LIGHT_SHARE = 0.0        # share of light-on-dark marks
+SIZE_CHOICE: list[str] = []   # --sizes: one of these, uniform, when the text fits
 STYLE_WEIGHTS = {"laser_dots": 0.35, "laser_fill": 0.3, "ink": 0.25, "peen": 0.1, "flat": 0.0}
 # laser on photo wood: opacity range, char colour factor, wood-detail factor
 LASER_PHOTO = {"opacity": (0.8, 0.98), "char": 0.75, "detail": 0.5}
@@ -266,11 +267,18 @@ def sample_params(rng: np.random.Generator, seed: list[int], styles: list[str],
         template = str(rng.choice(TEMPLATES))
         text = random_text(rng, template)
         n_data = gen.generate(text).payload_cw
+        if SIZE_CHOICE:
+            fit = set(fitting_sizes(text, n_data, False) + fitting_sizes(text, n_data, True))
+            sizes = [s for s in SIZE_CHOICE if s in fit]
+            if sizes:
+                size = str(rng.choice(sizes))
+                break
+            continue
         sizes = fitting_sizes(text, n_data, rect=bool(rng.random() < 0.3))
         if sizes:
+            # mostly the smallest size that fits, sometimes one or two larger
+            size = sizes[min(len(sizes) - 1, int(rng.choice([0, 0, 0, 1, 2])))]
             break
-    # mostly the smallest size that fits, sometimes one or two larger
-    size = sizes[min(len(sizes) - 1, int(rng.choice([0, 0, 0, 1, 2])))]
     w = np.array([STYLE_WEIGHTS[s] for s in styles])
     style = str(rng.choice(styles, p=w / w.sum() if w.sum() > 0 else None))
     # light on dark was flagged in every review round; only on request
@@ -1604,6 +1612,8 @@ def main() -> int:
                     "the TSV files then list only this part)")
     ap.add_argument("--style", default=",".join(DEFAULT_STYLES),
                     help=f"comma list of {', '.join(STYLES)}")
+    ap.add_argument("--sizes", help="comma list of symbol sizes (e.g. 20x20,8x32); "
+                    "each mark takes one of them that its text fits, uniformly")
     ap.add_argument("--patches", type=Path,
                     help="folder of wood photo patches (optional index.tsv: file, ppm); "
                     "half the samples use one")
@@ -1639,6 +1649,12 @@ def main() -> int:
             ap.error(f"unknown style {s}")
     if args.style != ",".join(DEFAULT_STYLES):     # named styles: equal shares
         STYLE_WEIGHTS.update({s: 1.0 for s in styles})
+    if args.sizes:
+        known = {f"{r[0]}x{r[1]}" for r in gen.SQUARE_SYMBOLS + gen.RECT_SYMBOLS}
+        SIZE_CHOICE[:] = args.sizes.split(",")
+        for s in SIZE_CHOICE:
+            if s not in known:
+                ap.error(f"unknown size {s}")
     patches = load_patches(args.patches) if args.patches else {}
     recs = []
     if args.scene:

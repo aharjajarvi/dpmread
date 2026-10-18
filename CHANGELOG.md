@@ -36,6 +36,14 @@ versions may change command-line flags and the JSON output.
 - `ml/boxes.py`: symbol boxes on real images for a detector, merged from
   labelled corners, the further codes `--multi` reads, and a local page
   to draw boxes on codes no reader decodes.
+- `tools/synth_marks.py --sizes`: marks of the listed symbol sizes only.
+- `ml/detector.py`, `ml/detector_data.py`, `ml/train_detector.py`,
+  `ml/evaluate_detector.py`: a symbol detector for a cheap first try. A
+  finder on the whole frame (long side 512 px) gives up to three symbol
+  quads; a measurer on a full-resolution crop of each refines the corners
+  and gives polarity and the three most likely sizes. Training on scene
+  frames, fine-tuning on real images with the backbone frozen, ONNX
+  export, and an offline score of the chain. Not used by the reader yet.
 - `tools/agreement.py`: module agreement of known texts with the symbol
   in an image, for checking ground-truth labels. Fits the grid on the
   finder and timing pattern only, then scores every candidate text
