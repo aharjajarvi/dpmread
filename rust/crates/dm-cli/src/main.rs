@@ -74,6 +74,10 @@ struct Args {
     /// (builds with the cargo feature `ml` only)
     #[arg(long)]
     no_classifier: bool,
+    /// do not try the trained symbol detector's quads first (builds with
+    /// the cargo feature `ml` only)
+    #[arg(long)]
+    no_detector: bool,
 }
 
 /// One stderr line per image with `DPMREAD_TIMINGS` set (P4b.7 profiling):
@@ -88,7 +92,8 @@ fn timings_line(res: &ReadResult, t: &Timings) -> String {
     let mut s = format!(
         "timings {name} ok={} total={:.3} workers={} variants={:.3} \
          zxing_wall={:.3} zxing_busy={:.3} zxing_jobs={} grid_variants={:.3} \
-         grid_wall={:.3} grid_busy={:.3} grid_jobs={} ml={:.3} ml_calls={} finish={:.3}",
+         grid_wall={:.3} grid_busy={:.3} grid_jobs={} ml={:.3} ml_calls={} detector={:.3} \
+         detector_tries={} finish={:.3}",
         u8::from(!res.data.is_empty()),
         res.elapsed,
         t.workers,
@@ -102,6 +107,8 @@ fn timings_line(res: &ReadResult, t: &Timings) -> String {
         t.grid_jobs,
         t.ml,
         t.ml_calls,
+        t.detector,
+        t.detector_tries,
         t.finish,
     );
     for (n, v) in STAGE_NAMES.iter().zip(t.grid) {
@@ -156,6 +163,7 @@ fn main() -> ExitCode {
         analyse: !args.no_analysis,
         fit_inputs: args.dump_fits.is_some(),
         classifier: !args.no_classifier,
+        detector: !args.no_detector,
     };
     let runner = Runner::new(args.jobs.max(1));
     let mut results = Vec::new();

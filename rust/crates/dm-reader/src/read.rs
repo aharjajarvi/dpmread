@@ -94,6 +94,9 @@ pub struct ReadOptions {
     /// with the trained module classifier (cargo feature `ml`; without it
     /// this does nothing).
     pub classifier: bool,
+    /// Before zxing and the variant ladder, try the quads of the trained
+    /// symbol detector (cargo feature `ml`; without it this does nothing).
+    pub detector: bool,
 }
 
 /// Progress callback of `read_image`: `(stage, jobs done, jobs in stage)`
@@ -132,6 +135,7 @@ impl Default for ReadOptions {
             analyse: true,
             fit_inputs: false,
             classifier: true,
+            detector: true,
         }
     }
 }
@@ -283,6 +287,9 @@ pub struct Timings {
     /// Module classifier (feature `ml`): wall time and calls.
     pub ml: f64,
     pub ml_calls: usize,
+    /// Detector first try (feature `ml`): wall time and grid calls.
+    pub detector: f64,
+    pub detector_tries: usize,
     /// `analyse_known` (after a zxing read) or `quality` (grid read).
     pub finish: f64,
 }
@@ -557,16 +564,42 @@ fn read_bgr(
     let mut t = t0;
     let busy = AtomicU64::new(0);
     let gray_orig = bgr_to_gray(bgr);
+    // 0. detector first try (feature `ml`): a read skips everything below
+    #[cfg(feature = "ml")]
+    let first = if opts.detector && opts.engines.grid {
+        let (r, tries) = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
+        tm.detector_tries = tries;
+        tm.detector = lap(&mut t);
+        r
+    } else {
+        None
+    };
+    let mut found: Vec<Found> = Vec::new();
+    #[cfg(feature = "ml")]
+    if let Some((v, r)) = &first {
+        res.attempts += 1;
+        found.push(Found {
+            engine: "grid",
+            variant: v.name.clone(),
+            data: r.dec.data.clone(),
+            hit: Hit::Grid(v, Box::new(r.clone())),
+        });
+    }
+    let skip = !found.is_empty() && !opts.exhaustive;
     let invert = opts.polarity == Polarity::Light;
     let inverted_extra = opts.polarity == Polarity::Any;
     let expect = opts.expect.as_deref();
     // variant chains and tiles are rayon tasks on the workers
-    let (variants, tiles) = runner.install(|| {
-        rayon::join(
-            || enhancement_variants(bgr, invert, inverted_extra),
-            || tile_variants(bgr, invert),
-        )
-    });
+    let (variants, tiles) = if skip {
+        (Vec::new(), Vec::new())
+    } else {
+        runner.install(|| {
+            rayon::join(
+                || enhancement_variants(bgr, invert, inverted_extra),
+                || tile_variants(bgr, invert),
+            )
+        })
+    };
     let gvars: Vec<Variant>;
     let mut by_name = ByName(Vec::new());
     variants.iter().for_each(|v| by_name.insert(v));
@@ -576,14 +609,13 @@ fn read_bgr(
     }
     tm.variants = lap(&mut t);
     let exhaustive = opts.exhaustive;
-    let mut found: Vec<Found> = Vec::new();
     let done = |found: &Vec<Found>| !found.is_empty() && !exhaustive;
 
     let mut seeds: Vec<(&Variant, Quad)> = Vec::new();
     let mut tile_seeds: Vec<(&Variant, Quad)> = Vec::new();
     let mut tile_hit: Vec<&str> = Vec::new();
     // 1. zxing on all variants (cheap), whole image first, then the tiles
-    if opts.engines.zxing && ZXING_AVAILABLE {
+    if opts.engines.zxing && ZXING_AVAILABLE && !skip {
         let ladder: Vec<&Variant> = variants.iter().chain(tiles.iter().flatten()).collect();
         // with a known polarity the ladder already has it: no inverted retries
         let try_invert = opts.polarity == Polarity::Any;

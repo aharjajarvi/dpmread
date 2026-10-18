@@ -1,6 +1,6 @@
 [package]
 name = "dm-ml"
-description = "Module classifier: per-module dark / light probabilities of a grid fit (cargo feature `ml` of dm-reader)."
+description = "Trained models of the reader (cargo feature `ml` of dm-reader): module classifier and symbol detector."
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

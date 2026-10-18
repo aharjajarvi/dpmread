@@ -183,6 +183,7 @@ fn to_read_options(o: &Options) -> dm_reader::ReadOptions {
         analyse: o.analyse,
         fit_inputs: false,
         classifier: true,
+        detector: true,
     }
 }
 
