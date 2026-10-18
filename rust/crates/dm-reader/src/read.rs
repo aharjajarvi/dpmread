@@ -594,27 +594,16 @@ fn read_bgr(
         None
     };
     let mut found: Vec<Found> = Vec::new();
-    // a read of the main symbol ends the image; of another symbol, it is
-    // kept for when the classic search reads nothing
     #[cfg(feature = "ml")]
-    let held = match &first {
-        Some(f) => {
-            res.attempts += 1;
-            let hit = Found {
-                engine: "grid",
-                variant: f.v.name.clone(),
-                data: f.read.dec.data.clone(),
-                hit: Hit::Grid(&f.v, Box::new(f.read.clone())),
-            };
-            if f.main {
-                found.push(hit);
-                None
-            } else {
-                Some(hit)
-            }
-        }
-        None => None,
-    };
+    if let Some((v, r)) = &first {
+        res.attempts += 1;
+        found.push(Found {
+            engine: "grid",
+            variant: v.name.clone(),
+            data: r.dec.data.clone(),
+            hit: Hit::Grid(v, Box::new(r.clone())),
+        });
+    }
     let skip = !found.is_empty() && !opts.exhaustive;
     let invert = opts.polarity == Polarity::Light;
     let inverted_extra = opts.polarity == Polarity::Any;
@@ -811,12 +800,6 @@ fn read_bgr(
         tm.ml = lap(&mut t);
     }
 
-    #[cfg(feature = "ml")]
-    if found.is_empty()
-        && let Some(h) = held
-    {
-        found.push(h);
-    }
     res.fits = failed_fits;
     res.elapsed = t0.elapsed().as_secs_f64();
     if found.is_empty() {

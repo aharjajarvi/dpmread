@@ -1,9 +1,12 @@
 //! Detector first try (cargo feature `ml`), unless one zxing call on the
 //! gray image already reads (`read::quick_zxing`): the trained symbol detector
 //! (`dm_ml::Detector`) gives up to `DETECTIONS` symbol quads with size
-//! candidates and polarity; each quad goes to `grid_decode_seeds` on the
-//! grid variants of a crop around it, quiet-zone template first. The first
-//! read ends the image; otherwise the classic search runs as before.
+//! candidates and polarity. The largest symbol and the detections centred
+//! inside it go to `grid_decode_seeds` on the grid variants of a crop
+//! around each, quiet-zone template first; smaller symbols are not tried,
+//! so a photo of one part never reports a neighbouring part's code from
+//! here. The first read ends the image; otherwise the classic search runs
+//! as before.
 
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
@@ -45,7 +48,7 @@ pub(crate) fn first_try(
     opts: &ReadOptions,
     runner: &Runner,
     deadline: Instant,
-) -> (Option<FirstTry>, usize) {
+) -> (Option<(Variant, GridRead)>, usize) {
     let dl = Deadline {
         at: Some(deadline.min(Instant::now() + Duration::from_secs_f64(FIRST_TRY_S))),
         abort: Some(runner.abort_flag()),
@@ -53,8 +56,9 @@ pub(crate) fn first_try(
     let Some(mut dets) = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS) else {
         return (None, 0);
     };
-    // the largest symbol first: in a photo of one part it is that part's
-    // code; detections centred inside it are the same symbol
+    // only the largest symbol: in a photo of one part it is that part's
+    // code, and a read of a smaller one would report another part's code;
+    // detections centred inside it are the same symbol
     dets.sort_by(|a, b| area(&b.quad).total_cmp(&area(&a.quad)));
     let main = dets.first().map(|d| d.quad);
     // one job per (detection, crop variant), in that order; the runner's
@@ -96,8 +100,10 @@ pub(crate) fn first_try(
         if x1 <= x0 + 8 || y1 <= y0 + 8 {
             continue;
         }
+        if !main.is_some_and(|m| inside(&m, (cx, cy))) {
+            continue;
+        }
         let crop = crop_bgr(bgr, x0, y0, x1 - x0, y1 - y0);
-        let on_main = main.is_some_and(|m| inside(&m, (cx, cy)));
         for gv in runner.install(|| grid_variants(&crop, invert, both)) {
             let s = gv.scale as f32;
             let quad = d
@@ -113,7 +119,6 @@ pub(crate) fn first_try(
                 },
                 quad,
                 symbols: symbols.clone(),
-                main: on_main,
             });
         }
     }
@@ -135,11 +140,7 @@ pub(crate) fn first_try(
             tries += 1;
             match r {
                 Some(r) => {
-                    hit = Some(FirstTry {
-                        v: jobs[i].v.clone(),
-                        read: r,
-                        main: jobs[i].main,
-                    });
+                    hit = Some((jobs[i].v.clone(), r));
                     ControlFlow::Break(())
                 }
                 None => ControlFlow::Continue(()),
@@ -155,17 +156,6 @@ struct Job {
     v: Variant,
     quad: [[f32; 2]; 4],
     symbols: Option<Vec<Symbol>>,
-    main: bool,
-}
-
-/// A first-try read: the crop variant it was made on, the read, and
-/// whether it is of the main (largest) detected symbol. A read of another
-/// symbol is a different part's code in a photo of several: the caller
-/// keeps it only when the classic search reads nothing.
-pub(crate) struct FirstTry {
-    pub v: Variant,
-    pub read: GridRead,
-    pub main: bool,
 }
 
 fn area(q: &[[f32; 2]; 4]) -> f32 {
