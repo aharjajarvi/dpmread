@@ -125,7 +125,8 @@ def score(rows: list[dict], tol: float) -> tuple[dict, list[dict]]:
                 for m in rec["marks"])
             dets.append({"file": rec["file"], "score": d["score"], "false": not on,
                          "sizes": ",".join(d["sizes"]), "polarity": d["polarity"],
-                         "quad": " ".join(f"{x:.1f},{y:.1f}" for x, y in d["quad"])})
+                         "quad": " ".join(f"{x:.1f},{y:.1f}" for x, y in d["quad"]),
+                         "finder_quad": " ".join(f"{x:.1f},{y:.1f}" for x, y in d["finder"])})
     return marks, dets
 
 
@@ -203,7 +204,8 @@ def main() -> int:
                       groups[g], [f for f in groups[g] if f in empty]))
     if args.out:
         with open(args.out, "w", encoding="utf-8", newline="") as f:
-            w = csv.DictWriter(f, ["file", "score", "false", "sizes", "polarity", "quad"],
+            w = csv.DictWriter(f, ["file", "score", "false", "sizes", "polarity", "quad",
+                                   "finder_quad"],
                                delimiter="\t", lineterminator="\n")
             w.writeheader()
             w.writerows(dets)
