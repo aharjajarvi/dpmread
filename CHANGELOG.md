@@ -40,6 +40,15 @@ versions may change command-line flags and the JSON output.
   `Reader` loads the detector models when it is created.
 - `DPMREAD_TIMINGS`: `detector_gate`, `detector_models` and
   `detector_crops`, the parts of the detector first try.
+- Camera frames: `Reader.read_frame` in `dm-ffi` (an 8-bit gray image
+  from memory with its row stride, such as an Android Y plane),
+  `dm_reader::read_frame` and `--frame`. One zxing pass on the gray
+  image, then the detector first try (feature `ml`); no variant ladder,
+  no classic grid search and no analysis after a zxing read, so a read
+  ends within its budget. `dm-ffi` `Options.detector` (`--no-detector`).
+- Detector first try: a later job starts only while the time left is at
+  least what the first job took (building a crop variant cannot be
+  stopped).
 - `tools/synth_marks.py`: synthetic Data Matrix marks with exact ground
   truth (module matrix, corners, module centres) for training and testing:
   laser, ink and dot-peen styles on procedural or photo wood, scene and

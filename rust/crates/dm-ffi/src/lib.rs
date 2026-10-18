@@ -6,7 +6,9 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use dm_reader::{Engines, ReadResult, Runner, parse_sizes, printable, read_image, report_text};
+use dm_reader::{
+    Engines, Gray8, ReadResult, Runner, parse_sizes, printable, read_frame, read_image, report_text,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -36,6 +38,10 @@ pub struct Options {
     /// statistics and grades; `false` (`--no-analysis`) is faster, same text.
     #[uniffi(default = true)]
     pub analyse: bool,
+    /// The detector first try (feature `ml`; without it this does
+    /// nothing); `false` is `--no-detector`.
+    #[uniffi(default = true)]
+    pub detector: bool,
 }
 
 /// One read symbol: the first, then the further ones of a `multi` read.
@@ -73,12 +79,14 @@ pub enum ReadError {
     /// The file could not be read or decoded as an image. (Not `message`:
     /// that clashes with `Throwable.message` in the Kotlin bindings.)
     Load { reason: String },
+    /// `read_frame`: the sizes do not fit the buffer.
+    Frame { reason: String },
 }
 
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReadError::Load { reason } => f.write_str(reason),
+            ReadError::Load { reason } | ReadError::Frame { reason } => f.write_str(reason),
         }
     }
 }
@@ -97,6 +105,7 @@ pub fn default_options() -> Options {
         polarity: Polarity::Any,
         multi: false,
         analyse: true,
+        detector: true,
     }
 }
 
@@ -157,6 +166,36 @@ impl Reader {
         Ok(output(&res, stopped))
     }
 
+    /// Read a camera frame from memory: an 8-bit gray image (an Android
+    /// Y plane) of `width` x `height` with `row_stride` bytes per row. One
+    /// zxing pass, then the detector first try (feature `ml`, unless
+    /// `options.detector` is false); no variant ladder and no classic
+    /// grid search, so a read ends within `options.budget_s`. `multi` and
+    /// `analyse` are ignored (after a zxing read: text and outline, no
+    /// module matrix); the JSON `file` is `frame`. Blocks: call it off the UI
+    /// thread.
+    pub fn read_frame(
+        &self,
+        width: u32,
+        height: u32,
+        row_stride: u32,
+        bytes: Vec<u8>,
+        options: Options,
+    ) -> Result<ReadOutput, ReadError> {
+        let gray = frame_gray(width, height, row_stride, &bytes)?;
+        let _busy = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        *self.running.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        let res = read_frame(&gray, &to_read_options(&options), &self.runner);
+        let stopped = {
+            let mut running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+            *running = false;
+            let s = self.runner.stopped();
+            self.runner.stop_handle().resume();
+            s
+        };
+        Ok(output(&res, stopped))
+    }
+
     /// End the running read soon (it returns with `stopped` set); no
     /// effect when no read is running.
     pub fn stop(&self) {
@@ -164,6 +203,31 @@ impl Reader {
             self.runner.stop_handle().stop();
         }
     }
+}
+
+/// The `width` x `height` gray image of a buffer with `row_stride` bytes
+/// per row (the last row may end at `width`).
+pub fn frame_gray(
+    width: u32,
+    height: u32,
+    row_stride: u32,
+    bytes: &[u8],
+) -> Result<Gray8, ReadError> {
+    let (w, h, stride) = (width as usize, height as usize, row_stride as usize);
+    let need = if h == 0 { 0 } else { (h - 1) * stride + w };
+    if w == 0 || h == 0 || stride < w || bytes.len() < need {
+        return Err(ReadError::Frame {
+            reason: format!(
+                "frame {w}x{h}, row stride {stride}: needs {need} bytes, got {}",
+                bytes.len()
+            ),
+        });
+    }
+    let mut data = Vec::with_capacity(w * h);
+    for y in 0..h {
+        data.extend_from_slice(&bytes[y * stride..y * stride + w]);
+    }
+    Ok(Gray8::from_vec(w, h, data))
 }
 
 fn to_read_options(o: &Options) -> dm_reader::ReadOptions {
@@ -186,7 +250,8 @@ fn to_read_options(o: &Options) -> dm_reader::ReadOptions {
         analyse: o.analyse,
         fit_inputs: false,
         classifier: true,
-        detector: true,
+        detector: o.detector,
+        frame: false,
     }
 }
 

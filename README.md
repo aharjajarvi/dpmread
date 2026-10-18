@@ -97,6 +97,7 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--dump-fits DIR` | save each image's grid fits (module centres and the symbol resampled through the fit), for training a module classifier |
 | `--no-classifier` | do not run the module classifier on failed fits (builds with `--features ml` only) |
 | `--no-detector` | do not try the symbol detector's quads before the classic search (builds with `--features ml` only) |
+| `--frame` | read each image as a camera frame: its gray image, one zxing pass, then the symbol detector (with `--features ml`); no variant ladder or classic search, so a read ends within `--budget` |
 
 Exit code: 0 if every image decoded, 1 if an image did not decode or
 could not be read, 2 on invalid options.

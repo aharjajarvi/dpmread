@@ -2,7 +2,9 @@
 //! (`to_dict`) of the same read, the symbol carries its outline and (grid
 //! engine) module matrix; a missing file is a load error; `stop` ends a
 //! read of an unreadable image long before its budget, and with no read
-//! running does not stop the next read.
+//! running does not stop the next read. `Reader::read_frame` on the same
+//! symbol as a Y plane with row padding gives the file read's text; a
+//! buffer too short for its sizes is a frame error.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -96,6 +98,45 @@ fn read_matches_cli_json() {
 }
 
 #[test]
+fn frame_matches_file_text() {
+    let (path, _) = render("frame");
+    let img = image::open(&path).expect("open the test PNG").to_luma8();
+    let file = Reader::new(2)
+        .read(path.to_string_lossy().into_owned(), default_options())
+        .expect("read");
+    let _ = std::fs::remove_file(&path);
+    // a Y plane: rows padded to the stride with junk
+    let (w, h) = (img.width(), img.height());
+    let stride = w + 13;
+    let mut bytes = vec![0x7fu8; (stride * h) as usize];
+    for y in 0..h as usize {
+        let row = &img.as_raw()[y * w as usize..(y + 1) * w as usize];
+        bytes[y * stride as usize..y * stride as usize + w as usize].copy_from_slice(row);
+    }
+    let opts = dm_ffi::Options {
+        budget_s: 0.3,
+        ..default_options()
+    };
+    let out = Reader::new(2)
+        .read_frame(w, h, stride, bytes, opts)
+        .expect("read_frame");
+    assert!(file.decoded && out.decoded && !out.stopped);
+    assert_eq!(out.symbols[0].text, TEXT);
+    assert_eq!(out.symbols[0].text, file.symbols[0].text);
+    assert_eq!(out.symbols[0].outline.len(), 8);
+    let json: serde_json::Value = serde_json::from_str(&out.json).expect("valid JSON");
+    assert_eq!(json["file"], "frame");
+}
+
+#[test]
+fn short_frame_is_a_frame_error() {
+    let r = Reader::new(1).read_frame(100, 100, 120, vec![0; 100 * 120 - 21], default_options());
+    assert!(matches!(r, Err(ReadError::Frame { .. })));
+    let r = Reader::new(1).read_frame(100, 100, 99, vec![0; 100 * 100], default_options());
+    assert!(matches!(r, Err(ReadError::Frame { .. })));
+}
+
+#[test]
 fn grid_read_has_module_matrix() {
     let (path, matrix) = render("grid");
     let opts = dm_ffi::Options {
@@ -139,9 +180,10 @@ fn stop_ends_a_read_soon() {
     let _ = std::fs::remove_file(&path);
     assert!(out.stopped && !out.decoded);
     // well inside the 40 s budget; ~0.7 s on a desktop, more under load
-    // (other tests in parallel), so not a latency target
+    // (other tests in parallel; 5.1 s once on a CI runner, debug build),
+    // so not a latency target
     let took = ended.duration_since(stopped_at);
-    assert!(took < Duration::from_secs(5), "stop took {took:?}");
+    assert!(took < Duration::from_secs(10), "stop took {took:?}");
 }
 
 #[test]

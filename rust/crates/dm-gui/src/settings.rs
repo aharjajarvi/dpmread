@@ -74,6 +74,7 @@ impl Settings {
             fit_inputs: false,
             classifier: true,
             detector: true,
+            frame: false,
         }
     }
 

@@ -97,6 +97,11 @@ pub struct ReadOptions {
     /// Before zxing and the variant ladder, try the quads of the trained
     /// symbol detector (cargo feature `ml`; without it this does nothing).
     pub detector: bool,
+    /// Camera frame (`read_frame`, `--frame`): one zxing pass on the gray
+    /// image stands in for the variant ladder, then the detector first try;
+    /// no tiles, no classic grid search and no analysis after a zxing read,
+    /// so the budget holds.
+    pub frame: bool,
 }
 
 /// Progress callback of `read_image`: `(stage, jobs done, jobs in stage)`
@@ -136,6 +141,7 @@ impl Default for ReadOptions {
             fit_inputs: false,
             classifier: true,
             detector: true,
+            frame: false,
         }
     }
 }
@@ -551,6 +557,45 @@ pub fn read_image(
     Ok(res)
 }
 
+/// Read a camera frame given as a gray image (`ReadOptions.frame`): one
+/// zxing pass, then the detector first try (feature `ml`); `multi` and
+/// `analyse` are ignored (no grid fit after a zxing read: on a full-size
+/// frame it overran the budget; zxing gives the text and outline). The
+/// result's `path` is `frame`.
+pub fn read_frame(gray: &Gray8, opts: &ReadOptions, runner: &Runner) -> ReadResult {
+    let t0 = Instant::now();
+    let bgr = Bgr8::from_vec(
+        gray.width,
+        gray.height,
+        gray.data.iter().flat_map(|&v| [v, v, v]).collect(),
+    );
+    let opts = ReadOptions {
+        frame: true,
+        multi: false,
+        analyse: false,
+        ..opts.clone()
+    };
+    let deadline = t0 + Duration::from_secs_f64(opts.budget_s);
+    let mut res = read_bgr(Path::new("frame"), &bgr, &opts, runner, t0, deadline, true);
+    res.elapsed = t0.elapsed().as_secs_f64();
+    res
+}
+
+/// `read_frame` on the gray image of a file (`--frame`); `path` is the
+/// file's.
+pub fn read_frame_file(
+    path: &Path,
+    opts: &ReadOptions,
+    runner: &Runner,
+) -> Result<ReadResult, LoadError> {
+    let t0 = Instant::now();
+    let gray = bgr_to_gray(&load_image(path)?);
+    let mut res = read_frame(&gray, opts, runner);
+    res.path = path.to_path_buf();
+    res.elapsed = t0.elapsed().as_secs_f64();
+    Ok(res)
+}
+
 /// Modules across a read symbol (mean of rows and columns) for `--multi`.
 fn symbol_modules(res: &ReadResult) -> f32 {
     res.fit.as_ref().map_or(MULTI_FALLBACK_MODULES, |f| {
@@ -589,14 +634,42 @@ fn read_bgr(
     let mut t = t0;
     let busy = AtomicU64::new(0);
     let gray_orig = bgr_to_gray(bgr);
-    // 0. detector first try (feature `ml`): a read skips everything below
+    // frame: one plain zxing pass on the gray image, full size
+    let frame_var = (opts.frame && opts.engines.zxing && ZXING_AVAILABLE).then(|| {
+        let g = if opts.polarity == Polarity::Light {
+            gray_orig.inverted()
+        } else {
+            gray_orig.clone()
+        };
+        Variant::new("gray", g, 1.0)
+    });
+    let mut found: Vec<Found> = Vec::new();
+    if let Some(v) = &frame_var {
+        let (r, _) = zx(v, opts.polarity == Polarity::Any);
+        res.attempts += 1;
+        tm.zxing_jobs += 1;
+        if let Some(r) = r {
+            found.push(Found {
+                engine: "zxing",
+                variant: v.name.clone(),
+                data: r.data,
+                hit: Hit::Zxing(r.quad, r.info),
+            });
+        }
+        tm.zxing_wall = lap(&mut t);
+    }
+    // 0. detector first try (feature `ml`): a read skips everything below;
+    //    on a frame the zxing pass above stands in for the gate
     #[cfg(feature = "ml")]
-    let first = if opts.detector && opts.engines.grid && {
-        let tg = Instant::now();
-        let read = quick_zxing(&gray_orig, opts);
-        tm.detector_gate = tg.elapsed().as_secs_f64();
-        !read
-    } {
+    let first = if found.is_empty()
+        && opts.detector
+        && opts.engines.grid
+        && (opts.frame || {
+            let tg = Instant::now();
+            let read = quick_zxing(&gray_orig, opts);
+            tm.detector_gate = tg.elapsed().as_secs_f64();
+            !read
+        }) {
         let ft = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
         tm.detector_tries = ft.tries;
         tm.detector_models = ft.models;
@@ -606,7 +679,6 @@ fn read_bgr(
     } else {
         None
     };
-    let mut found: Vec<Found> = Vec::new();
     #[cfg(feature = "ml")]
     if let Some((v, r)) = &first {
         res.attempts += 1;
@@ -617,7 +689,7 @@ fn read_bgr(
             hit: Hit::Grid(v, Box::new(r.clone())),
         });
     }
-    let skip = !found.is_empty() && !opts.exhaustive;
+    let skip = opts.frame || (!found.is_empty() && !opts.exhaustive);
     let invert = opts.polarity == Polarity::Light;
     let inverted_extra = opts.polarity == Polarity::Any;
     let expect = opts.expect.as_deref();
@@ -634,6 +706,7 @@ fn read_bgr(
     };
     let gvars: Vec<Variant>;
     let mut by_name = ByName(Vec::new());
+    frame_var.iter().for_each(|v| by_name.insert(v));
     variants.iter().for_each(|v| by_name.insert(v));
     tiles.iter().flatten().for_each(|v| by_name.insert(v));
     if let Some(dir) = opts.debug_dir.as_ref().filter(|_| debug) {
@@ -688,7 +761,7 @@ fn read_bgr(
     let mut failed_fits: Vec<FitInput> = Vec::new();
     #[cfg(feature = "ml")]
     let mut ml_fits: Vec<(&Variant, NearMiss)> = Vec::new();
-    if !done(&found) && opts.engines.grid {
+    if !done(&found) && opts.engines.grid && !opts.frame {
         gvars = runner.install(|| grid_variants(bgr, invert, inverted_extra));
         tm.grid_variants = lap(&mut t);
         let mut stage: Vec<(&Variant, f64, &[Variant])> =
