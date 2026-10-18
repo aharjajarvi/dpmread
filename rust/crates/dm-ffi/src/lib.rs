@@ -126,9 +126,12 @@ pub struct Reader {
 
 #[uniffi::export]
 impl Reader {
-    /// `jobs` worker threads (1 = sequential; 0 counts as 1).
+    /// `jobs` worker threads (1 = sequential; 0 counts as 1). With the
+    /// feature `ml` this loads the detector models (~0.1 s on a phone).
     #[uniffi::constructor]
     pub fn new(jobs: u32) -> Self {
+        #[cfg(feature = "ml")]
+        dm_reader::detect::preload();
         Reader {
             runner: Runner::new(jobs.max(1) as usize),
             busy: Mutex::new(()),

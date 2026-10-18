@@ -12,6 +12,8 @@ repository.workspace = true
 crate-type = ["lib", "cdylib"]
 
 [features]
+# detector first try and module classifier (dm-reader's `ml`)
+ml = ["dm-reader/ml"]
 # the uniffi-bindgen binary that writes the Kotlin bindings
 bindgen = ["uniffi/cli"]
 

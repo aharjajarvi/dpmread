@@ -93,7 +93,8 @@ fn timings_line(res: &ReadResult, t: &Timings) -> String {
         "timings {name} ok={} total={:.3} workers={} variants={:.3} \
          zxing_wall={:.3} zxing_busy={:.3} zxing_jobs={} grid_variants={:.3} \
          grid_wall={:.3} grid_busy={:.3} grid_jobs={} ml={:.3} ml_calls={} detector={:.3} \
-         detector_tries={} finish={:.3}",
+         detector_tries={} detector_gate={:.3} detector_models={:.3} detector_crops={:.3} \
+         finish={:.3}",
         u8::from(!res.data.is_empty()),
         res.elapsed,
         t.workers,
@@ -109,6 +110,9 @@ fn timings_line(res: &ReadResult, t: &Timings) -> String {
         t.ml_calls,
         t.detector,
         t.detector_tries,
+        t.detector_gate,
+        t.detector_models,
+        t.detector_crops,
         t.finish,
     );
     for (n, v) in STAGE_NAMES.iter().zip(t.grid) {

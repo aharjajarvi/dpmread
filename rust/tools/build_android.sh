@@ -4,6 +4,7 @@
 # bindings generated from it.
 #
 #   rust/tools/build_android.sh          # -> rust/target/android/{jniLibs,kotlin}/
+#   rust/tools/build_android.sh --ml     # with the detector and classifier (feature ml)
 #
 # Needs the Android NDK (ANDROID_NDK_HOME, or the newest NDK under
 # $ANDROID_HOME/ndk or ~/Android/Sdk/ndk), cargo-ndk and the Rust targets
@@ -26,10 +27,15 @@ fi
 # CMake's Android support (zxing-cpp, libjpeg-turbo) reads ANDROID_NDK_ROOT
 export ANDROID_NDK_HOME ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
 
+FEATURES=()
+if [[ "${1:-}" == "--ml" ]]; then
+    FEATURES=(--features ml)
+fi
+
 cd "$RUST_DIR"
 rm -rf "$OUT/jniLibs" "$OUT/kotlin"
 cargo ndk -t arm64-v8a -t x86_64 -P "$API" -o "$OUT/jniLibs" \
-    build --release --locked -p dm-ffi
+    build --release --locked -p dm-ffi "${FEATURES[@]}"
 
 # the bindings come from the library's metadata; any target's build has it
 cargo build --locked -p dm-ffi

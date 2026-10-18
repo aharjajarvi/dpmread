@@ -50,7 +50,7 @@ rust/target/release/dpmread IMAGE_OR_FOLDER [...] [--json] [--debug DIR] \
     [--no-classifier] [--no-detector]   # cargo build --release -p dm-cli --features ml
 rust/target/release/dpmread-gui [IMAGE_OR_FOLDER ...]   # cargo build --release in rust/
 rust/tools/build_linux.sh            # release binaries for other distros (glibc 2.28)
-rust/tools/build_android.sh          # dm-ffi .so (arm64-v8a, x86_64) + Kotlin bindings
+rust/tools/build_android.sh [--ml]   # dm-ffi .so (arm64-v8a, x86_64) + Kotlin bindings; --ml: detector
 python python/datamatrix_reader.py IMAGE_OR_FOLDER [...] [same flags, + libdmtx engine]
 python python/datamatrix_gen.py
 ```

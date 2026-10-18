@@ -31,7 +31,15 @@ versions may change command-line flags and the JSON output.
   the variant ladder, which run only when that gives no read. The main
   symbol is the large one nearest the image centre; other symbols are not
   tried first. The report names the variant `detector > …`.
-  `--no-detector` turns it off.
+  `--no-detector` turns it off. Each first-try job builds its own crop
+  variant and the first job (the variant that reads most often) runs
+  alone, so a phone frame read by the first try ends within a 0.3 s
+  budget.
+- `dm-ffi` feature `ml` (`rust/tools/build_android.sh --ml`): the
+  detector first try and the module classifier in the app library; a
+  `Reader` loads the detector models when it is created.
+- `DPMREAD_TIMINGS`: `detector_gate`, `detector_models` and
+  `detector_crops`, the parts of the detector first try.
 - `tools/synth_marks.py`: synthetic Data Matrix marks with exact ground
   truth (module matrix, corners, module centres) for training and testing:
   laser, ink and dot-peen styles on procedural or photo wood, scene and
