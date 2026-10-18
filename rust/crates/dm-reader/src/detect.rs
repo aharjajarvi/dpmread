@@ -1,9 +1,9 @@
 //! Detector first try (cargo feature `ml`), unless one zxing call on the
 //! gray image already reads (`read::quick_zxing`): the trained symbol detector
 //! (`dm_ml::Detector`) gives up to `DETECTIONS` symbol quads with size
-//! candidates and polarity. The largest symbol and the detections centred
-//! inside it go to `grid_decode_seeds` on the grid variants of a crop
-//! around each, quiet-zone template first; smaller symbols are not tried,
+//! candidates and polarity. The main symbol (nearest the image centre
+//! among the large ones) and the detections centred inside it go to `grid_decode_seeds` on the grid variants of a crop
+//! around each, quiet-zone template first; other symbols are not tried,
 //! so a photo of one part never reports a neighbouring part's code from
 //! here. The first read ends the image; otherwise the classic search runs
 //! as before.
@@ -26,6 +26,9 @@ pub const DETECTIONS: usize = 3;
 pub const MIN_SCORE: f32 = 0.3;
 /// Time the first try may take; the classic search gets the rest.
 pub const FIRST_TRY_S: f64 = 3.0;
+/// Smallest area, as a share of the largest detection's, a detection needs
+/// to be the main symbol.
+pub const MAIN_AREA: f32 = 0.25;
 /// Polarity probability above which only that polarity is tried.
 pub const SURE_POLARITY: f32 = 0.9;
 
@@ -56,11 +59,26 @@ pub(crate) fn first_try(
     let Some(mut dets) = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS) else {
         return (None, 0);
     };
-    // only the largest symbol: in a photo of one part it is that part's
-    // code, and a read of a smaller one would report another part's code;
-    // detections centred inside it are the same symbol
-    dets.sort_by(|a, b| area(&b.quad).total_cmp(&area(&a.quad)));
-    let main = dets.first().map(|d| d.quad);
+    // only the main symbol: in a photo of one part it is that part's code,
+    // and a read of another would report a neighbouring part's code. Main =
+    // the one nearest the image centre among those of at least
+    // `MAIN_AREA` x the largest area; detections centred inside it are the
+    // same symbol
+    let largest = dets.iter().map(|d| area(&d.quad)).fold(0.0, f32::max);
+    let (w, h) = (gray.width as f32, gray.height as f32);
+    let off_centre = |q: &[[f32; 2]; 4]| {
+        let (cx, cy) = (
+            q.iter().map(|p| p[0]).sum::<f32>() / 4.0,
+            q.iter().map(|p| p[1]).sum::<f32>() / 4.0,
+        );
+        ((cx / w - 0.5).powi(2) + (cy / h - 0.5).powi(2)).sqrt()
+    };
+    let main = dets
+        .iter()
+        .filter(|d| area(&d.quad) >= MAIN_AREA * largest)
+        .min_by(|a, b| off_centre(&a.quad).total_cmp(&off_centre(&b.quad)))
+        .map(|d| d.quad);
+    dets.sort_by_key(|d| !main.is_some_and(|m| m == d.quad));
     // one job per (detection, crop variant), in that order; the runner's
     // threads take them and the first read in job order wins
     let mut jobs: Vec<Job> = Vec::new();
