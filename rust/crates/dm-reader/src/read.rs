@@ -290,6 +290,12 @@ pub struct Timings {
     /// Detector first try (feature `ml`): wall time and grid calls.
     pub detector: f64,
     pub detector_tries: usize,
+    /// Parts of `detector`: the zxing gate (`quick_zxing`), the models
+    /// (`Detector::detect`, with the load on first use) and the crops; the
+    /// rest is the grid jobs (crop grid variants and grid calls).
+    pub detector_gate: f64,
+    pub detector_models: f64,
+    pub detector_crops: f64,
     /// `analyse_known` (after a zxing read) or `quality` (grid read).
     pub finish: f64,
 }
@@ -585,11 +591,18 @@ fn read_bgr(
     let gray_orig = bgr_to_gray(bgr);
     // 0. detector first try (feature `ml`): a read skips everything below
     #[cfg(feature = "ml")]
-    let first = if opts.detector && opts.engines.grid && !quick_zxing(&gray_orig, opts) {
-        let (r, tries) = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
-        tm.detector_tries = tries;
+    let first = if opts.detector && opts.engines.grid && {
+        let tg = Instant::now();
+        let read = quick_zxing(&gray_orig, opts);
+        tm.detector_gate = tg.elapsed().as_secs_f64();
+        !read
+    } {
+        let ft = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
+        tm.detector_tries = ft.tries;
+        tm.detector_models = ft.models;
+        tm.detector_crops = ft.crops;
         tm.detector = lap(&mut t);
-        r
+        ft.hit
     } else {
         None
     };

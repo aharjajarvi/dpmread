@@ -200,49 +200,61 @@ pub fn inverted_chain(bgr: &Bgr8) -> Vec<Variant> {
     ]
 }
 
-/// `grid_variants`: grayscale variants for the grid decoder (no
-/// binarisation); each member is a rayon task, in order.
-pub fn grid_variants(bgr: &Bgr8, invert: bool, inverted_extra: bool) -> Vec<Variant> {
-    #[derive(Clone, Copy)]
-    enum Member {
-        /// `<channel> > flatten` of the first three channels.
-        Flat(usize),
-        /// Gray and `gray > flatten > clahe`.
-        Gray,
-        Inverted,
-    }
-    let mut members: Vec<Member> = (0..3).map(Member::Flat).collect();
-    members.push(Member::Gray);
+/// One member of `grid_variants`: one or two variants built together.
+#[derive(Clone, Copy, Debug)]
+pub enum GridMember {
+    /// `<channel> > flatten` of the first three channels.
+    Flat(usize),
+    /// Gray and `gray > flatten > clahe`.
+    Gray,
+    Inverted,
+}
+
+/// The members of `grid_variants`, in order.
+pub fn grid_members(invert: bool, inverted_extra: bool) -> Vec<GridMember> {
+    let mut members: Vec<GridMember> = (0..3).map(GridMember::Flat).collect();
+    members.push(GridMember::Gray);
     if !invert && inverted_extra {
-        members.push(Member::Inverted);
+        members.push(GridMember::Inverted);
     }
+    members
+}
+
+/// The variants of one `grid_variants` member.
+pub fn grid_member(bgr: &Bgr8, invert: bool, m: GridMember) -> Vec<Variant> {
     let flat6 = |name: String, c: &Gray8| {
         let (g, s) = normalise_size(c, 600);
         let sigma = g.min_side() as f64 / 6.0;
         Variant::new(name, flatten_background(&g, sigma), s)
     };
-    let parts: Vec<Vec<Variant>> = members
+    match m {
+        GridMember::Flat(i) => {
+            let (cname, c) = channel(bgr, invert, i);
+            vec![flat6(format!("{cname} > flatten"), &c)]
+        }
+        GridMember::Gray => {
+            let (gk, c) = channel(bgr, invert, 0);
+            let (g, s) = normalise_size(&c, 600);
+            let sigma = g.min_side() as f64 / 6.0;
+            let fc = clahe(&flatten_background(&g, sigma), 2.0, 4);
+            vec![
+                Variant::new(gk.clone(), g, s),
+                Variant::new(format!("{gk} > flatten > clahe"), fc, s),
+            ]
+        }
+        GridMember::Inverted => vec![flat6(
+            "inv-gray > flatten".to_string(),
+            &bgr_to_gray(bgr).inverted(),
+        )],
+    }
+}
+
+/// `grid_variants`: grayscale variants for the grid decoder (no
+/// binarisation); each member is a rayon task, in order.
+pub fn grid_variants(bgr: &Bgr8, invert: bool, inverted_extra: bool) -> Vec<Variant> {
+    let parts: Vec<Vec<Variant>> = grid_members(invert, inverted_extra)
         .into_par_iter()
-        .map(|m| match m {
-            Member::Flat(i) => {
-                let (cname, c) = channel(bgr, invert, i);
-                vec![flat6(format!("{cname} > flatten"), &c)]
-            }
-            Member::Gray => {
-                let (gk, c) = channel(bgr, invert, 0);
-                let (g, s) = normalise_size(&c, 600);
-                let sigma = g.min_side() as f64 / 6.0;
-                let fc = clahe(&flatten_background(&g, sigma), 2.0, 4);
-                vec![
-                    Variant::new(gk.clone(), g, s),
-                    Variant::new(format!("{gk} > flatten > clahe"), fc, s),
-                ]
-            }
-            Member::Inverted => vec![flat6(
-                "inv-gray > flatten".to_string(),
-                &bgr_to_gray(bgr).inverted(),
-            )],
-        })
+        .map(|m| grid_member(bgr, invert, m))
         .collect();
     parts.into_iter().flatten().collect()
 }
