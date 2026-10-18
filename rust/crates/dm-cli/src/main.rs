@@ -10,7 +10,8 @@ use clap::{Parser, ValueEnum};
 use dm_reader::timing::STAGE_NAMES;
 use dm_reader::{
     Engines, Polarity, ReadOptions, ReadResult, Runner, Timings, ZXING_AVAILABLE, collect_inputs,
-    default_jobs, parse_sizes, printable, read_image, report_text, to_json, write_fit_dump,
+    default_jobs, parse_sizes, printable, read_frame_file, read_image, report_text, to_json,
+    write_fit_dump,
 };
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -78,6 +79,12 @@ struct Args {
     /// the cargo feature `ml` only)
     #[arg(long)]
     no_detector: bool,
+    /// read each image as a camera frame: its gray image, one zxing pass,
+    /// then the detector first try; no variant ladder, no classic grid
+    /// search and no analysis after a zxing read, so a read ends within
+    /// --budget
+    #[arg(long)]
+    frame: bool,
 }
 
 /// One stderr line per image with `DPMREAD_TIMINGS` set (P4b.7 profiling):
@@ -168,12 +175,23 @@ fn main() -> ExitCode {
         fit_inputs: args.dump_fits.is_some(),
         classifier: !args.no_classifier,
         detector: !args.no_detector,
+        frame: false,
     };
     let runner = Runner::new(args.jobs.max(1));
+    // frames: load the detector models before the first one, as an app does
+    #[cfg(feature = "ml")]
+    if args.frame && opts.detector {
+        dm_reader::detect::preload();
+    }
     let mut results = Vec::new();
     let mut failed = false;
     for path in collect_inputs(&inputs) {
-        match read_image(&path, &opts, &runner) {
+        let r = if args.frame {
+            read_frame_file(&path, &opts, &runner)
+        } else {
+            read_image(&path, &opts, &runner)
+        };
+        match r {
             Ok(mut res) => {
                 if let Some(dir) = &args.dump_fits {
                     if let Err(e) = write_fit_dump(dir, &res) {

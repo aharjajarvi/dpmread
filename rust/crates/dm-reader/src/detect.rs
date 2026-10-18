@@ -167,11 +167,17 @@ pub(crate) fn first_try(
     }
     out.crops = t.elapsed().as_secs_f64();
     // the first job alone (it reads most often; on a phone its siblings
-    // slow it down by more than they gain), then the rest in parallel
-    let attempt = |j: &Job| {
+    // slow it down by more than they gain), then the rest in parallel. A
+    // variant is built and tried only with at least `left` of the budget
+    // to go: building one cannot be stopped, so for the later jobs `left`
+    // is what the first job took
+    let attempt = |j: &Job, left: Duration| {
         let mut calls = 0;
+        if dl.at.is_some_and(|at| Instant::now() + left > at) {
+            return (None, 0);
+        }
         for gv in grid_member(&crops[j.crop], j.invert, j.member) {
-            if dl.at.is_some_and(|at| Instant::now() > at) {
+            if dl.at.is_some_and(|at| Instant::now() + left > at) {
                 break;
             }
             let s = gv.scale as f32;
@@ -193,20 +199,28 @@ pub(crate) fn first_try(
     };
     let (mut tries, mut hit) = (0, None);
     let split = jobs.len().min(1);
+    let mut left = Duration::ZERO;
     for part in [&jobs[..split], &jobs[split..]] {
         if hit.is_some() {
             break;
         }
-        runner.run(part, dl.at, attempt, |_, (r, calls)| {
-            tries += calls;
-            match r {
-                Some(r) => {
-                    hit = Some(r);
-                    ControlFlow::Break(())
+        let t = Instant::now();
+        runner.run(
+            part,
+            dl.at,
+            |j| attempt(j, left),
+            |_, (r, calls)| {
+                tries += calls;
+                match r {
+                    Some(r) => {
+                        hit = Some(r);
+                        ControlFlow::Break(())
+                    }
+                    None => ControlFlow::Continue(()),
                 }
-                None => ControlFlow::Continue(()),
-            }
-        });
+            },
+        );
+        left = t.elapsed();
     }
     out.hit = hit;
     out.tries = tries;
