@@ -15,8 +15,8 @@ per image inside the network, so a caller passes plain pixels.
 
 Corners are an unordered quad: losses take the best of the 4 cyclic
 orders of a clockwise quad, and `clockwise` brings labels to that
-winding. Nothing here places modules (`D-030` in the private docs is the
-reason; the reader fits the grid on the finder and timing pattern).
+winding. Nothing here places modules: the reader fits the grid on the
+finder and timing pattern of the symbol.
 """
 
 from __future__ import annotations
