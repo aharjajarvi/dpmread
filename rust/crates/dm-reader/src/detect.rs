@@ -45,14 +45,18 @@ pub(crate) fn first_try(
     opts: &ReadOptions,
     runner: &Runner,
     deadline: Instant,
-) -> (Option<(Variant, GridRead)>, usize) {
+) -> (Option<FirstTry>, usize) {
     let dl = Deadline {
         at: Some(deadline.min(Instant::now() + Duration::from_secs_f64(FIRST_TRY_S))),
         abort: Some(runner.abort_flag()),
     };
-    let Some(dets) = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS) else {
+    let Some(mut dets) = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS) else {
         return (None, 0);
     };
+    // the largest symbol first: in a photo of one part it is that part's
+    // code; detections centred inside it are the same symbol
+    dets.sort_by(|a, b| area(&b.quad).total_cmp(&area(&a.quad)));
+    let main = dets.first().map(|d| d.quad);
     // one job per (detection, crop variant), in that order; the runner's
     // threads take them and the first read in job order wins
     let mut jobs: Vec<Job> = Vec::new();
@@ -93,6 +97,7 @@ pub(crate) fn first_try(
             continue;
         }
         let crop = crop_bgr(bgr, x0, y0, x1 - x0, y1 - y0);
+        let on_main = main.is_some_and(|m| inside(&m, (cx, cy)));
         for gv in runner.install(|| grid_variants(&crop, invert, both)) {
             let s = gv.scale as f32;
             let quad = d
@@ -108,6 +113,7 @@ pub(crate) fn first_try(
                 },
                 quad,
                 symbols: symbols.clone(),
+                main: on_main,
             });
         }
     }
@@ -129,7 +135,11 @@ pub(crate) fn first_try(
             tries += 1;
             match r {
                 Some(r) => {
-                    hit = Some((jobs[i].v.clone(), r));
+                    hit = Some(FirstTry {
+                        v: jobs[i].v.clone(),
+                        read: r,
+                        main: jobs[i].main,
+                    });
                     ControlFlow::Break(())
                 }
                 None => ControlFlow::Continue(()),
@@ -145,4 +155,36 @@ struct Job {
     v: Variant,
     quad: [[f32; 2]; 4],
     symbols: Option<Vec<Symbol>>,
+    main: bool,
+}
+
+/// A first-try read: the crop variant it was made on, the read, and
+/// whether it is of the main (largest) detected symbol. A read of another
+/// symbol is a different part's code in a photo of several: the caller
+/// keeps it only when the classic search reads nothing.
+pub(crate) struct FirstTry {
+    pub v: Variant,
+    pub read: GridRead,
+    pub main: bool,
+}
+
+fn area(q: &[[f32; 2]; 4]) -> f32 {
+    0.5 * (0..4)
+        .map(|i| {
+            let (a, b) = (q[i], q[(i + 1) % 4]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f32>()
+        .abs()
+}
+
+/// Point in a convex quad (either winding).
+fn inside(q: &[[f32; 2]; 4], p: (f32, f32)) -> bool {
+    let s: Vec<f32> = (0..4)
+        .map(|i| {
+            let (a, b) = (q[i], q[(i + 1) % 4]);
+            (b[0] - a[0]) * (p.1 - a[1]) - (b[1] - a[1]) * (p.0 - a[0])
+        })
+        .collect();
+    s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
 }
