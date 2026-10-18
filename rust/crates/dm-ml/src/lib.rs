@@ -6,6 +6,10 @@
 //! ONNX, run with tract (pure Rust); the trained weights are embedded.
 //! Training code: `ml/` at the repo root.
 
+pub mod detector;
+
+pub use detector::{Detection, Detector};
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 

@@ -23,6 +23,15 @@ versions may change command-line flags and the JSON output.
   a trained module classifier (new crate `dm-ml`, tract, weights
   embedded) and decoded with the same error correction.
   `--no-classifier` turns it off.
+- Cargo feature `ml`: a trained symbol detector as the first try (new in
+  `dm-ml`, tract, weights embedded). When one zxing call on the gray image
+  does not read, a finder on the whole frame and a measurer on a
+  full-resolution crop give the main symbol's corners, polarity and three
+  size candidates; the grid decoder tries them on a crop before zxing and
+  the variant ladder, which run only when that gives no read. The main
+  symbol is the large one nearest the image centre; other symbols are not
+  tried first. The report names the variant `detector > …`.
+  `--no-detector` turns it off.
 - `tools/synth_marks.py`: synthetic Data Matrix marks with exact ground
   truth (module matrix, corners, module centres) for training and testing:
   laser, ink and dot-peen styles on procedural or photo wood, scene and

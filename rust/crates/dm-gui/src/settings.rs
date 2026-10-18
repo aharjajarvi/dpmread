@@ -73,6 +73,7 @@ impl Settings {
             analyse: true,
             fit_inputs: false,
             classifier: true,
+            detector: true,
         }
     }
 

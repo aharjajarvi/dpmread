@@ -2,6 +2,8 @@
 
 pub mod annotate;
 pub mod charset;
+#[cfg(feature = "ml")]
+pub mod detect;
 pub mod fitdump;
 #[cfg(feature = "ml")]
 pub mod ml;
