@@ -435,6 +435,25 @@ fn reader_quad(q: &dm_grid::Quad) -> Quad {
     q.map(|[x, y]| (x, y))
 }
 
+/// Feature `ml`: one zxing call on the gray image near 700 px. A read
+/// there means the classic search reads the image at once, so the detector
+/// first try would only add time.
+#[cfg(feature = "ml")]
+fn quick_zxing(gray: &Gray8, opts: &ReadOptions) -> bool {
+    if !(opts.engines.zxing && ZXING_AVAILABLE) {
+        return false;
+    }
+    let g = if opts.polarity == Polarity::Light {
+        gray.inverted()
+    } else {
+        gray.clone()
+    };
+    let (g, s) = dm_imgproc::normalise_size(&g, 700);
+    zx(&Variant::new("gray", g, s), opts.polarity == Polarity::Any)
+        .0
+        .is_some()
+}
+
 #[cfg(feature = "zxing")]
 fn zx(v: &Variant, try_invert: bool) -> (Option<ZxRead>, Vec<Quad>) {
     crate::zxing::zxing_read(v, try_invert)
@@ -566,7 +585,7 @@ fn read_bgr(
     let gray_orig = bgr_to_gray(bgr);
     // 0. detector first try (feature `ml`): a read skips everything below
     #[cfg(feature = "ml")]
-    let first = if opts.detector && opts.engines.grid {
+    let first = if opts.detector && opts.engines.grid && !quick_zxing(&gray_orig, opts) {
         let (r, tries) = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
         tm.detector_tries = tries;
         tm.detector = lap(&mut t);

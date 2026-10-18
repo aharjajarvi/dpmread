@@ -1,4 +1,5 @@
-//! Detector first try (cargo feature `ml`): the trained symbol detector
+//! Detector first try (cargo feature `ml`), unless one zxing call on the
+//! gray image already reads (`read::quick_zxing`): the trained symbol detector
 //! (`dm_ml::Detector`) gives up to `DETECTIONS` symbol quads with size
 //! candidates and polarity; each quad goes to `grid_decode_seeds` on the
 //! grid variants of a crop around it, quiet-zone template first. The first
