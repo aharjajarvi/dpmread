@@ -154,7 +154,16 @@ light). Material for training and checking a module classifier; the read
 itself is unchanged. Images with the same name in different folders
 overwrite each other's files.
 
-**Module classifier** (cargo feature `ml`, off by default): when every
+**Symbol detector** (cargo feature `ml`, on in the release zips, off in a
+plain `cargo build`): when one zxing call on the gray image does not read,
+a finder network on the whole frame and a measurer on a full-resolution
+crop give the main symbol's corners, polarity and three size candidates;
+the grid decoder tries them on a crop first, and zxing and the variant
+ladder run only when that gives no read. The report names the variant
+`detector > …`. Weights are embedded in `dm-ml` (tract). `--no-detector`
+or the GUI setting turns it off.
+
+**Module classifier** (cargo feature `ml`, as the detector): when every
 grid attempt has failed, the three best failed fits are classified again
 by a small convolutional network (33 k weights, crate `dm-ml`, run with
 tract) instead of the threshold, on the `--dump-fits` input, and decoded
@@ -176,8 +185,9 @@ thread, Ryzen 7 5700X). Training code: `ml/`.
 - detail pane: annotated image with zoom and pan, decoded text with *Copy*,
   the full technical report in its own window;
 - toolbar: polarity, time budget, *all codes* (`--multi`); a settings
-  window for expected sizes, engines, exhaustive mode and worker threads
-  (kept between sessions);
+  window for expected sizes, engines, exhaustive mode, worker threads and,
+  in builds with `ml`, the symbol detector and module classifier (kept
+  between sessions);
 - *Stop* ends the image being read and keeps the queue, *Continue* goes on;
   *Read again*, *Open folder* and *Copy path* per row;
 - export of the finished results as CSV (one line per symbol) or JSON;
@@ -229,8 +239,8 @@ Build and run-time footprint:
 
 | | Linux x86-64 | Windows x64 |
 |---|---|---|
-| CLI binary | 5.1 MB | 7.0 MB |
-| GUI binary | 12.7 MB | 17.1 MB |
+| CLI binary (feature `ml`) | 27.0 MB | not measured with `ml` yet (7.0 MB without) |
+| GUI binary (feature `ml`) | 34.6 MB | not measured with `ml` yet (17.1 MB without) |
 | Needs | glibc ≥ 2.28 (2018 distributions on); the GUI ships libxkbcommon(-x11) and libxcb-xkb (0.6 MB) | Windows 10 / 11, no Visual C++ Redistributable |
 | CPU | any x86-64; AVX2 / FMA used when present | same |
 

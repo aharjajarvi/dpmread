@@ -328,6 +328,11 @@ impl eframe::App for App {
                 self.table.selected = lines.get(n).map(|&(i, s)| (self.rows[i].id, s));
                 shot.select = None;
             }
+            if let Some(p) = shot.export_due()
+                && let Err(e) = export::write(&p, &self.rows)
+            {
+                eprintln!("export {}: {e}", p.display());
+            }
         }
         egui::Panel::top("toolbar").show(ui, |ui| {
             ui.add_space(4.0);

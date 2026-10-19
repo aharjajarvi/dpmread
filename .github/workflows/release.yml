@@ -45,7 +45,7 @@ jobs:
       - name: build
         working-directory: rust
         run: |
-          cargo build --release --locked -p dm-cli -p dm-gui
+          cargo build --release --locked -p dm-cli -p dm-gui --features dm-cli/ml,dm-gui/ml
           python tools/check_dlls.py target/release/dpmread.exe target/release/dpmread-gui.exe
       - name: zip
         run: |

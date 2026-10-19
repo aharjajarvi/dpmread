@@ -4,6 +4,10 @@ dpmread - Data Matrix (ECC 200) reader for poor quality marks
   dpmread        command line: dpmread IMAGE_OR_FOLDER [...] [--json]
                  dpmread --help lists every option
 
+Both programs include a trained symbol detector and a module classifier;
+turn them off in the GUI settings (Trained models) or with --no-detector
+and --no-classifier.
+
 Nothing to install: unpack and run. On Linux the libxkbcommon and
 libxcb-xkb files next to dpmread-gui are found by it automatically; keep
 them in the same folder.
