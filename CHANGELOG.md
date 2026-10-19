@@ -18,7 +18,8 @@ versions may change command-line flags and the JSON output.
 - `--dump-fits DIR`: write each image's grid fits (the one that read and
   the best failed ones) with module centres and the symbol resampled
   through the fit, for training a module classifier.
-- Cargo feature `ml` (`dm-cli`, `dm-reader`; off by default): when every
+- Cargo feature `ml` (`dm-cli`, `dm-gui`, `dm-reader`; off in a plain
+  `cargo build`, on in the release zips): when every
   grid attempt fails, the best three failed fits are classified again by
   a trained module classifier (new crate `dm-ml`, tract, weights
   embedded) and decoded with the same error correction.
@@ -78,6 +79,11 @@ versions may change command-line flags and the JSON output.
 
 ### Changed
 
+- Release zips: `dpmread` and `dpmread-gui` are built with the feature
+  `ml`, so the symbol detector first try and the module classifier are on
+  by default. The GUI settings window has a checkbox for each under
+  *Trained models* (kept between sessions); the command line keeps
+  `--no-detector` and `--no-classifier`.
 - After a zxing read, the grid fit for the report tries the zxing outline
   alone before full detection, runs its attempts in parallel and stops
   after 2 s in total (was up to 8 s for each of 7 attempts). Public sets:

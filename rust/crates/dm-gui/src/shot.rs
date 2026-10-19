@@ -5,7 +5,9 @@
 //! `DPMREAD_GUI_SETTINGS` / `DPMREAD_GUI_REPORT` set the ⚙ / report window
 //! starts open (own OS windows, `popup.rs`: not in the screenshot, which
 //! holds the main window only), and
-//! `DPMREAD_GUI_STOP_AT=S` presses Stop S seconds after start.
+//! `DPMREAD_GUI_STOP_AT=S` presses Stop S seconds after start. With
+//! `DPMREAD_GUI_EXPORT=out.json` (or `.csv`) the results are exported there
+//! just before the screenshot, as *Export* would.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -15,6 +17,7 @@ use eframe::egui;
 pub const ENV: &str = "DPMREAD_GUI_SCREENSHOT";
 const SELECT_ENV: &str = "DPMREAD_GUI_SELECT";
 const STOP_ENV: &str = "DPMREAD_GUI_STOP_AT";
+const EXPORT_ENV: &str = "DPMREAD_GUI_EXPORT";
 const SETTLE_S: f64 = 1.5;
 
 pub struct Shot {
@@ -26,6 +29,9 @@ pub struct Shot {
     pub select: Option<usize>,
     /// When to press Stop.
     stop_at: Option<Instant>,
+    /// Where to export the results, and whether that is due now.
+    export: Option<PathBuf>,
+    export_due: bool,
 }
 
 impl Shot {
@@ -39,6 +45,8 @@ impl Shot {
                 .ok()
                 .and_then(|v| v.parse::<f64>().ok())
                 .map(|s| Instant::now() + std::time::Duration::from_secs_f64(s)),
+            export: std::env::var_os(EXPORT_ENV).map(PathBuf::from),
+            export_due: false,
         })
     }
 
@@ -49,6 +57,15 @@ impl Shot {
             self.stop_at = None;
         }
         due
+    }
+
+    /// The export path, once, when the results are to be exported.
+    pub fn export_due(&mut self) -> Option<PathBuf> {
+        if !self.export_due {
+            return None;
+        }
+        self.export_due = false;
+        self.export.take()
     }
 
     /// Call every frame; `ready`: nothing left to read.
@@ -84,6 +101,7 @@ impl Shot {
             .is_some_and(|t| t.elapsed().as_secs_f64() > SETTLE_S);
         if !self.requested && settled {
             self.requested = true;
+            self.export_due = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
         }
         ctx.request_repaint();

@@ -26,6 +26,12 @@ pub struct Settings {
     pub zxing: bool,
     pub grid: bool,
     pub exhaustive: bool,
+    /// Trained symbol detector as the first try (`--no-detector` off;
+    /// cargo feature `ml`, without it this does nothing).
+    pub detector: bool,
+    /// Module classifier on the best failed grid fits (`--no-classifier`
+    /// off; cargo feature `ml`).
+    pub classifier: bool,
     /// Reader threads; 0 = default (`default_jobs()`).
     pub jobs: usize,
 }
@@ -41,10 +47,15 @@ impl Default for Settings {
             zxing: o.engines.zxing,
             grid: o.engines.grid,
             exhaustive: o.exhaustive,
+            detector: o.detector,
+            classifier: o.classifier,
             jobs: 0,
         }
     }
 }
+
+/// Height of the settings window; the trained-model row needs two lines.
+const WINDOW_HEIGHT: f32 = if cfg!(feature = "ml") { 352.0 } else { 300.0 };
 
 pub const POLARITIES: [(&str, &str); 3] = [
     ("any", "any"),
@@ -72,8 +83,8 @@ impl Settings {
             progress: None,
             analyse: true,
             fit_inputs: false,
-            classifier: true,
-            detector: true,
+            classifier: self.classifier,
+            detector: self.detector,
             frame: false,
         }
     }
@@ -175,7 +186,7 @@ impl Settings {
             ctx,
             "settings",
             "Settings – dpmread",
-            [460.0, 300.0],
+            [460.0, WINDOW_HEIGHT],
             false,
             open,
             |ui| {
@@ -230,6 +241,18 @@ impl Settings {
                             );
                         });
                         ui.end_row();
+                        #[cfg(feature = "ml")]
+                        {
+                            ui.label("Trained models");
+                            ui.vertical(|ui| {
+                                ui.checkbox(&mut self.detector, "symbol detector (first try)");
+                                ui.checkbox(
+                                    &mut self.classifier,
+                                    "module classifier (on failed grid fits)",
+                                );
+                            });
+                            ui.end_row();
+                        }
                         ui.label("Worker threads");
                         ui.horizontal(|ui| {
                             ui.add(egui::DragValue::new(&mut self.jobs).range(0..=64));
@@ -279,6 +302,8 @@ mod tests {
         assert_eq!(o.polarity, d.polarity);
         assert_eq!((o.engines.zxing, o.engines.grid), (true, true));
         assert!(!o.multi && !o.exhaustive && o.expect.is_none());
+        assert_eq!((o.detector, o.classifier), (d.detector, d.classifier));
+        assert!(o.detector && o.classifier);
     }
 
     #[test]
@@ -289,6 +314,7 @@ mod tests {
             multi: true,
             expect: "24x24, 16X36".into(),
             grid: false,
+            detector: false,
             jobs: 3,
             ..Default::default()
         };
@@ -297,13 +323,14 @@ mod tests {
         let sizes: Vec<_> = o.expect.unwrap().iter().map(|s| (s.rows, s.cols)).collect();
         assert_eq!(sizes, [(16, 36), (24, 24)]);
         assert!(o.multi && !o.engines.grid);
+        assert!(!o.detector && o.classifier);
         assert_eq!(s.workers(), 3);
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
         // missing keys (older file) take the defaults
         let old: Settings = serde_json::from_str(r#"{"budget_s": 5.0}"#).unwrap();
         assert_eq!(old.budget_s, 5.0);
-        assert!(old.zxing);
+        assert!(old.zxing && old.detector && old.classifier);
     }
 
     #[test]

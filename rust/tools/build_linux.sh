@@ -29,7 +29,8 @@ docker run --rm -u "$(id -u):$(id -g)" \
     -v "$RUST_DIR:/src" -w /src \
     -e CARGO_HOME="/src/$OUT/cargo-home" \
     -e CARGO_TARGET_DIR="/src/$OUT" \
-    "$IMAGE" cargo build --release --locked -p dm-cli -p dm-gui
+    "$IMAGE" cargo build --release --locked -p dm-cli -p dm-gui \
+    --features dm-cli/ml,dm-gui/ml
 
 # Libraries shipped next to dpmread-gui (found through its $ORIGIN RUNPATH,
 # dm-gui/build.rs): winit dlopens libxkbcommon-x11 for X11, which stock

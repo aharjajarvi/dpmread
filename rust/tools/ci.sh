@@ -19,7 +19,7 @@
 # up to date with cargo about (about.toml, about.hbs); cargo test --workspace;
 # parity vs the v2 baseline with the --jobs check; public sets vs
 # baseline/public_rust*.json (skipped if not fetched); old-glibc container
-# build (build_linux.sh, needs docker); zip of both container-built binaries
+# build (build_linux.sh, needs docker; feature ml); zip of both container-built binaries
 # (plus the libraries the GUI ships, README.txt, LICENSE, NOTICE and
 # THIRD_PARTY_LICENSES.md; release_zip.py) in rust/target/dist/.
 #
@@ -82,6 +82,7 @@ if [ $GUI = 1 ]; then
 
     step "clippy (dm-gui)"
     cargo clippy -p dm-gui --all-targets -- -D warnings
+    cargo clippy -p dm-gui --features ml --all-targets -- -D warnings
 
     step "test (dm-gui)"
     if [ -n "$PRIVATE" ] && [ -d "$PRIVATE/testimages" ]; then
@@ -100,8 +101,8 @@ fi
 
 step "clippy"
 cargo clippy --workspace --all-targets -- -D warnings
-# the module classifier hook builds only with the feature `ml`
-cargo clippy -p dm-reader -p dm-cli --features ml --all-targets -- -D warnings
+# the detector and classifier build only with the feature `ml`
+cargo clippy -p dm-reader -p dm-cli -p dm-gui --features ml --all-targets -- -D warnings
 cargo test -p dm-reader --features ml --lib ml::
 
 if [ $FAST = 1 ]; then
@@ -173,7 +174,7 @@ fi
 if [ $WINDOWS = 1 ]; then
     step "windows build"
     cd "$RUST_DIR"
-    cargo build --release --locked -p dm-cli -p dm-gui
+    cargo build --release --locked -p dm-cli -p dm-gui --features dm-cli/ml,dm-gui/ml
     python tools/check_dlls.py target/release/dpmread.exe target/release/dpmread-gui.exe
     os=windows-x86_64 bin_dir="$RUST_DIR/target/release" ext=.exe libs=
 else

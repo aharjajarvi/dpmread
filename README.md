@@ -31,6 +31,8 @@ damage it can repair.
   segments (ASCII, C40, Text, X12, EDIFACT, Base 256, GS1, ECI), quality
   estimate in the style of ISO/IEC 15415, corner points.
   Text or JSON output; annotated debug images.
+- Trained symbol detector as the first try and a module classifier for
+  failed grid fits (cargo feature `ml`, on in the release zips).
 - Desktop GUI: drag and drop files or folders, results table, annotated
   image with zoom, technical report, CSV / JSON export.
 - Self-contained binaries, nothing to install: no runtime, no DLLs on
@@ -95,9 +97,9 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--matrix` | print the sampled module matrix |
 | `--debug DIR` | save the enhancement variants and an annotated image |
 | `--dump-fits DIR` | save each image's grid fits (module centres and the symbol resampled through the fit), for training a module classifier |
-| `--no-classifier` | do not run the module classifier on failed fits (builds with `--features ml` only) |
-| `--no-detector` | do not try the symbol detector's quads before the classic search (builds with `--features ml` only) |
-| `--frame` | read each image as a camera frame: its gray image, one zxing pass, then the symbol detector (with `--features ml`); no variant ladder or classic search, so a read ends within `--budget` |
+| `--no-classifier` | do not run the module classifier on failed fits (release zips and builds with `--features ml`) |
+| `--no-detector` | do not try the symbol detector's quads before the classic search (release zips and builds with `--features ml`) |
+| `--frame` | read each image as a camera frame: its gray image, one zxing pass, then the symbol detector (release zips and builds with `--features ml`); no variant ladder or classic search, so a read ends within `--budget` |
 
 Exit code: 0 if every image decoded, 1 if an image did not decode or
 could not be read, 2 on invalid options.
@@ -115,7 +117,7 @@ Linux:
 # Debian / Ubuntu: sudo apt install cmake g++   (plus rustup)
 cd rust
 cargo build --release      # rust/target/release/dpmread, dpmread-gui
-cargo build --release -p dm-cli --features ml   # dpmread with the module classifier
+cargo build --release -p dm-cli -p dm-gui --features dm-cli/ml,dm-gui/ml   # with the detector and classifier, as in the release zips
 ```
 
 The binaries link only against glibc and the C++ runtime; the GUI loads
