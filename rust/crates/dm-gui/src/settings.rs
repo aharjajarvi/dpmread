@@ -54,9 +54,6 @@ impl Default for Settings {
     }
 }
 
-/// Height of the settings window; the trained-model row needs two lines.
-const WINDOW_HEIGHT: f32 = if cfg!(feature = "ml") { 352.0 } else { 300.0 };
-
 pub const POLARITIES: [(&str, &str); 3] = [
     ("any", "any"),
     ("dark", "dark on light"),
@@ -186,7 +183,7 @@ impl Settings {
             ctx,
             "settings",
             "Settings – dpmread",
-            [460.0, WINDOW_HEIGHT],
+            [460.0, 300.0],
             false,
             open,
             |ui| {

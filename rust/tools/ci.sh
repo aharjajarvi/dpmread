@@ -87,6 +87,7 @@ if [ $GUI = 1 ]; then
     step "test (dm-gui)"
     if [ -n "$PRIVATE" ] && [ -d "$PRIVATE/testimages" ]; then
         cargo test -p dm-gui -- --include-ignored
+        cargo test -p dm-gui --features ml -- --include-ignored
     else
         cargo test -p dm-gui
         echo "private test images not found (DM_PRIVATE_DIR='$PRIVATE'): tests marked #[ignore] skipped"
@@ -142,6 +143,8 @@ step "test"
 if [ -n "$PRIVATE" ] && [ -d "$PRIVATE/fixtures" ]; then
     echo "private test data: $PRIVATE (tests marked #[ignore] included)"
     cargo test --workspace -- --include-ignored
+    # the GUI's detector toggle (feature ml, private image)
+    cargo test -p dm-gui --features ml -- --include-ignored
 else
     cargo test --workspace
     echo "private fixtures not found (DM_PRIVATE_DIR='$PRIVATE'): tests marked #[ignore] skipped"

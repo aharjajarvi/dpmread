@@ -239,8 +239,8 @@ Build and run-time footprint:
 
 | | Linux x86-64 | Windows x64 |
 |---|---|---|
-| CLI binary | 5.1 MB | 7.0 MB |
-| GUI binary | 12.7 MB | 17.1 MB |
+| CLI binary (feature `ml`) | 27.0 MB | not measured with `ml` yet (7.0 MB without) |
+| GUI binary (feature `ml`) | 34.6 MB | not measured with `ml` yet (17.1 MB without) |
 | Needs | glibc ≥ 2.28 (2018 distributions on); the GUI ships libxkbcommon(-x11) and libxcb-xkb (0.6 MB) | Windows 10 / 11, no Visual C++ Redistributable |
 | CPU | any x86-64; AVX2 / FMA used when present | same |
 

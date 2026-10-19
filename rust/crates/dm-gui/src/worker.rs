@@ -186,7 +186,12 @@ mod tests {
     #[ignore = "needs private test data (DM_PRIVATE_DIR)"]
     fn reads_in_order_with_progress() {
         let w = Worker::spawn(|| {});
-        let opts = Arc::new(ReadOptions::default());
+        // without the detector first try (feature `ml`), which reads this
+        // image before any zxing progress
+        let opts = Arc::new(ReadOptions {
+            detector: false,
+            ..Default::default()
+        });
         let paths = [pick("gui_quick_read"), PathBuf::from("/nonexistent/x.png")];
         for (id, p) in paths.iter().enumerate() {
             w.push(Job {
@@ -271,5 +276,36 @@ mod tests {
             "{:?}",
             t_stop.elapsed()
         );
+    }
+
+    /// The settings window's detector toggle reaches the reader: on, the
+    /// image is read by the detector first try; off, it is not.
+    #[cfg(feature = "ml")]
+    #[test]
+    #[ignore = "needs private test data (DM_PRIVATE_DIR)"]
+    fn detector_toggle_reaches_the_reader() {
+        let w = Worker::spawn(|| {});
+        for (id, on) in [(0, true), (1, false)] {
+            let s = crate::settings::Settings {
+                detector: on,
+                ..Default::default()
+            };
+            w.push(Job {
+                id,
+                path: pick("gui_quick_read"),
+                opts: Arc::new(s.options()),
+                workers: 2,
+            });
+        }
+        let variants: Vec<_> = collect(&w, 2)
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Finished(id, Outcome::Read(r)) => Some((id, r.variant.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(variants.len(), 2, "{variants:?}");
+        assert!(variants[0].1.starts_with("detector >"), "{variants:?}");
+        assert!(!variants[1].1.starts_with("detector >"), "{variants:?}");
     }
 }
