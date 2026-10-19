@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "dm-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "dm-reader",
@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "dm-codec"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "dm-ecc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dm-symbol",
  "serde",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "dm-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dm-ecc",
  "dm-reader",
@@ -847,11 +847,11 @@ dependencies = [
 
 [[package]]
 name = "dm-gen"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "dm-grid"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dm-codec",
  "dm-ecc",
@@ -864,7 +864,7 @@ dependencies = [
 
 [[package]]
 name = "dm-gui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "directories",
  "dm-imgproc",
@@ -882,7 +882,7 @@ dependencies = [
 
 [[package]]
 name = "dm-imgproc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "image",
  "serde",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "dm-ml"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dm-imgproc",
  "tract-onnx",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "dm-reader"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "dm-codec",
  "dm-ecc",
@@ -918,7 +918,7 @@ dependencies = [
 
 [[package]]
 name = "dm-symbol"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",

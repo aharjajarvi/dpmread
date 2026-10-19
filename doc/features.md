@@ -2,7 +2,8 @@
 
 What dpmread does today, how it does it, how fast it is and how well it
 reads. Planned work is in [roadmap.md](roadmap.md). Figures are for
-version 0.2 and are updated with each release.
+version 0.3 (release build, feature `ml`) and are updated with each
+release.
 
 ## Contents
 
@@ -219,12 +220,12 @@ Measured on an AMD Ryzen 7 5700X (8 cores, 16 threads), Linux, default
 options, 60 s budget, over the 193 images of the [public test
 sets](#benchmarks):
 
-| | dpmread (Rust, `main` 2026-10-13) | Python reference (v2) |
+| | dpmread 0.3 (Rust, feature `ml`) | Python reference (v2) |
 |---|---|---|
-| Total time (sum over images) | 107 s | 772 s |
-| Median per image | 0.28 s | 0.93 s |
-| 90th percentile per image | 0.40 s | 2.68 s |
-| Slowest image | 12 s | 57 s |
+| Total time (sum over images) | 108 s | 772 s |
+| Median per image | 0.24 s | 0.93 s |
+| 90th percentile per image | 0.37 s | 2.68 s |
+| Slowest image | 14 s | 57 s |
 
 Most images are read by the library pass in well under a second. The time
 goes into images that need the grid decoder; those take seconds to tens of
@@ -271,8 +272,8 @@ budget:
 
 | Reader | Hits (images) | False reads | Code level, default | Code level, `--multi` |
 |---|---|---|---|---|
-| dpmread 0.2 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **97.6 %** |
-| dpmread 0.2, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
+| dpmread 0.3 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **98.8 %** |
+| dpmread 0.3, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
 | Python reference v1 / v2 | 181 / 191 (94.8 %) | 1 | 73.9 % | – |
 
 Two of the 193 images have no ground truth and are not scored. The
@@ -282,14 +283,14 @@ the grid decoder adds.
 
 For orientation: published code-level figures on the
 Karrach set are about 65 % for zxing-cpp and 72 % for libdmtx (multi-symbol
-reading, from a third-party benchmark); dpmread reaches 97.3 % on that set
+reading, from a third-party benchmark); dpmread reaches 100 % on that set
 with `--multi`.
 
 Reproduce:
 
 ```sh
 python tools/fetch_public_sets.py
-cd rust && cargo build --release && cd ..
+cd rust && cargo build --release -p dm-cli --features ml && cd ..
 python tools/score_public.py --reader rust
 python tools/score_public.py --reader rust --multi
 ```

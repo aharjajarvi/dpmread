@@ -7,6 +7,8 @@ versions may change command-line flags and the JSON output.
 
 ## [Unreleased]
 
+## [0.3.0] – 2026-10-19
+
 ### Added
 
 - `dm-ffi`: the reader as a library for Android apps (Kotlin bindings
@@ -84,6 +86,8 @@ versions may change command-line flags and the JSON output.
   by default. The GUI settings window has a checkbox for each under
   *Trained models* (kept between sessions); the command line keeps
   `--no-detector` and `--no-classifier`.
+- `features.md`: figures for 0.3, measured with the release build
+  (feature `ml`): public sets 188 / 191, `--multi` code level 98.8 %.
 - After a zxing read, the grid fit for the report tries the zxing outline
   alone before full detection, runs its attempts in parallel and stops
   after 2 s in total (was up to 8 s for each of 7 attempts). Public sets:
@@ -136,6 +140,7 @@ First public release.
 - Release zips for Linux x86-64 and Windows x64 with licence files and
   `SHA256SUMS`, built by GitHub Actions.
 
-[Unreleased]: https://github.com/aharjajarvi/dpmread/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/aharjajarvi/dpmread/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aharjajarvi/dpmread/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aharjajarvi/dpmread/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aharjajarvi/dpmread/releases/tag/v0.1.0
