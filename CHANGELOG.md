@@ -7,6 +7,19 @@ versions may change command-line flags and the JSON output.
 
 ## [Unreleased]
 
+### Added
+
+- `--multi-thorough` and the GUI setting *thorough* (builds with `ml`):
+  `--multi` as before, with the whole search after each read.
+
+### Changed
+
+- `--multi` with the symbol detector (feature `ml`): after the first read
+  the searches aim at the symbols the detector sees on the whole image
+  and on 3 × 3 tiles, and stop once each is covered or tried, instead of
+  searching the whole image again until a search finds nothing.
+  `dm-ffi` reads with `multi` this way too.
+
 ## [0.3.0] – 2026-10-19
 
 ### Added

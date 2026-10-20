@@ -95,8 +95,18 @@ flowchart TD
    module-count estimate, which tells whether the mark is close to readable
    or physically destroyed.
 
-With `--multi`, each decoded symbol is covered and the image is read again
-until no further symbol is found.
+With `--multi`, each decoded symbol is covered and the image is read again.
+In builds with `ml` and the symbol detector on, the detector first lists
+the symbols it sees, on the whole image and on 3 × 3 overlapping tiles.
+The reads after the first one aim at those symbols: the detector's first
+try and zxing on the covered image, then the first try on each listed
+symbol not yet read (for a sure detection again on a crop 1.5 times as
+large), then for a symbol seen on the whole image the classic search on a
+crop around it (at most 3 s). The image is done once every listed symbol is covered or
+tried; there is no further search of the whole image. `--multi-thorough`
+(and every `--multi` without the detector) instead runs the whole search
+again after each read, until one finds nothing: slower, but it also finds
+symbols the detector does not see.
 
 `--expect RxC` and `--polarity` restrict the search to known symbol sizes
 and polarity. On a fixed setup this cuts the time per image considerably.
@@ -185,7 +195,8 @@ thread, Ryzen 7 5700X). Training code: `ml/`.
   *failed only* filter;
 - detail pane: annotated image with zoom and pan, decoded text with *Copy*,
   the full technical report in its own window;
-- toolbar: polarity, time budget, *all codes* (`--multi`); a settings
+- toolbar: polarity, time budget, *all codes* (`--multi`) and, in builds
+  with `ml`, *thorough* (`--multi-thorough`); a settings
   window for expected sizes, engines, exhaustive mode, worker threads and,
   in builds with `ml`, the symbol detector and module classifier (kept
   between sessions);

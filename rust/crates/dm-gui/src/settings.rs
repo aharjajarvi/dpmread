@@ -21,6 +21,10 @@ pub struct Settings {
     pub polarity: String,
     /// Read every symbol of an image ("all codes", `--multi`).
     pub multi: bool,
+    /// With `multi`: the whole search in every pass ("thorough",
+    /// `--multi-thorough`; cargo feature `ml` with the detector, without
+    /// them every `multi` read is thorough).
+    pub multi_thorough: bool,
     /// Expected sizes as typed (`--expect`), empty for all.
     pub expect: String,
     pub zxing: bool,
@@ -43,6 +47,7 @@ impl Default for Settings {
             budget_s: o.budget_s,
             polarity: "any".into(),
             multi: o.multi,
+            multi_thorough: o.multi_thorough,
             expect: String::new(),
             zxing: o.engines.zxing,
             grid: o.engines.grid,
@@ -77,6 +82,7 @@ impl Settings {
             },
             debug_dir: None,
             multi: self.multi,
+            multi_thorough: self.multi_thorough,
             progress: None,
             analyse: true,
             fit_inputs: false,
@@ -175,6 +181,23 @@ impl Settings {
         .on_hover_text("max seconds per image");
         ui.checkbox(&mut self.multi, "all codes")
             .on_hover_text("read every symbol in the image");
+        #[cfg(feature = "ml")]
+        self.thorough_checkbox(ui, "thorough");
+    }
+
+    /// "thorough" for all codes: only with "all codes" and the detector.
+    #[cfg(feature = "ml")]
+    fn thorough_checkbox(&mut self, ui: &mut egui::Ui, label: &str) {
+        ui.add_enabled(
+            self.multi && self.detector,
+            egui::Checkbox::new(&mut self.multi_thorough, label),
+        )
+        .on_hover_text(
+            "all codes: search the whole image again after each code, until \
+             nothing more reads (slower; finds codes the symbol detector misses). \
+             Off: search only where the detector sees a code",
+        )
+        .on_disabled_hover_text("needs all codes and the symbol detector");
     }
 
     /// The ⚙ window: everything, applied to images added from now on.
@@ -232,6 +255,13 @@ impl Settings {
                         ui.label("Read");
                         ui.vertical(|ui| {
                             ui.checkbox(&mut self.multi, "all codes in an image");
+                            #[cfg(feature = "ml")]
+                            ui.indent("thorough", |ui| {
+                                self.thorough_checkbox(
+                                    ui,
+                                    "thorough (search the whole image after each code)",
+                                );
+                            });
                             ui.checkbox(
                                 &mut self.exhaustive,
                                 "exhaustive (try every method, keep the majority)",
@@ -298,7 +328,7 @@ mod tests {
         assert_eq!(o.budget_s, d.budget_s);
         assert_eq!(o.polarity, d.polarity);
         assert_eq!((o.engines.zxing, o.engines.grid), (true, true));
-        assert!(!o.multi && !o.exhaustive && o.expect.is_none());
+        assert!(!o.multi && !o.multi_thorough && !o.exhaustive && o.expect.is_none());
         assert_eq!((o.detector, o.classifier), (d.detector, d.classifier));
         assert!(o.detector && o.classifier);
     }
@@ -309,6 +339,7 @@ mod tests {
             budget_s: 12.5,
             polarity: "light".into(),
             multi: true,
+            multi_thorough: true,
             expect: "24x24, 16X36".into(),
             grid: false,
             detector: false,
@@ -319,7 +350,7 @@ mod tests {
         assert_eq!(o.polarity, Polarity::Light);
         let sizes: Vec<_> = o.expect.unwrap().iter().map(|s| (s.rows, s.cols)).collect();
         assert_eq!(sizes, [(16, 36), (24, 24)]);
-        assert!(o.multi && !o.engines.grid);
+        assert!(o.multi && o.multi_thorough && !o.engines.grid);
         assert!(!o.detector && o.classifier);
         assert_eq!(s.workers(), 3);
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
@@ -327,7 +358,7 @@ mod tests {
         // missing keys (older file) take the defaults
         let old: Settings = serde_json::from_str(r#"{"budget_s": 5.0}"#).unwrap();
         assert_eq!(old.budget_s, 5.0);
-        assert!(old.zxing && old.detector && old.classifier);
+        assert!(old.zxing && old.detector && old.classifier && !old.multi_thorough);
     }
 
     #[test]
