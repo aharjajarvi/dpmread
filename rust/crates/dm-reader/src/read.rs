@@ -81,6 +81,11 @@ pub struct ReadOptions {
     pub debug_dir: Option<PathBuf>,
     /// `--multi`: read every symbol of the image (`ReadResult.more`).
     pub multi: bool,
+    /// `--multi-thorough`: with `multi`, every pass after a read is the
+    /// whole search again, until one reads nothing. Without it, and with
+    /// the detector (cargo feature `ml`), the passes after the first read
+    /// aim at the symbols the detector sees and stop once each is covered.
+    pub multi_thorough: bool,
     /// Called after each consumed job (GUI progress); does not change the read.
     pub progress: Option<Progress>,
     /// After a zxing read, fit the grid at its position for the module
@@ -136,6 +141,7 @@ impl Default for ReadOptions {
             polarity: Polarity::Any,
             debug_dir: None,
             multi: false,
+            multi_thorough: false,
             progress: None,
             analyse: true,
             fit_inputs: false,
@@ -342,12 +348,46 @@ pub struct ReadResult {
     pub timings: Option<Timings>,
 }
 
+/// What one `read_bgr` call runs.
+enum Pass {
+    /// Everything: the detector first try, the zxing ladder, the classic
+    /// grid search.
+    Full,
+    /// `--multi` aimed pass: the detector first try (detections of this
+    /// image, in which the read symbols are covered) and the zxing ladder;
+    /// no classic grid search.
+    #[cfg(feature = "ml")]
+    Quick,
+    /// `--multi` aimed pass: the detector first try on this detection only,
+    /// its crop this many times the usual size.
+    #[cfg(feature = "ml")]
+    Aimed(dm_ml::Detection, f32),
+}
+
 impl ReadResult {
     fn new(path: &Path) -> Self {
         ReadResult {
             path: path.to_path_buf(),
             scale: 1.0,
             ..Default::default()
+        }
+    }
+
+    /// A read of a crop whose top left corner is at `(dx, dy)`: outline,
+    /// fit offsets, quality corners and module centres to image pixels.
+    #[cfg(feature = "ml")]
+    fn shift(&mut self, dx: f64, dy: f64) {
+        let (fx, fy) = (dx as f32, dy as f32);
+        self.quad = self.quad.map(|q| q.map(|(x, y)| (x + fx, y + fy)));
+        self.ox += dx;
+        self.oy += dy;
+        if let Some(q) = &mut self.quality {
+            q.corners_px = q.corners_px.map(|c| [c[0] + dx, c[1] + dy]);
+        }
+        for f in &mut self.fits {
+            f.centres
+                .iter_mut()
+                .for_each(|c| *c = [c[0] + dx, c[1] + dy]);
         }
     }
 
@@ -519,7 +559,9 @@ struct GridJob<'a> {
 /// within `opts.budget_s`. Stops at the first read unless exhaustive; the
 /// majority content wins. With `opts.multi` the read symbol is covered with
 /// the local background and the image read again (same budget), until
-/// nothing more reads; the further symbols go to `more`.
+/// nothing more reads; the further symbols go to `more`. With the detector
+/// and without `opts.multi_thorough`, these passes aim at the detector's
+/// symbols (`aimed_pass`).
 pub fn read_image(
     path: &Path,
     opts: &ReadOptions,
@@ -528,10 +570,14 @@ pub fn read_image(
     let t0 = Instant::now();
     let bgr = load_image(path)?;
     let deadline = t0 + Duration::from_secs_f64(opts.budget_s);
-    let mut res = read_bgr(path, &bgr, opts, runner, t0, deadline, true);
+    let mut res = read_bgr(path, &bgr, opts, runner, t0, deadline, true, &Pass::Full);
     if !opts.multi || res.data.is_empty() {
         return Ok(res);
     }
+    #[cfg(feature = "ml")]
+    let mut aims = (opts.detector && !opts.multi_thorough)
+        .then(|| crate::detect::symbol_aims(&bgr_to_gray(&bgr), MULTI_MAX))
+        .flatten();
     let mut img = bgr;
     let mut covered: Vec<Quad> = Vec::new();
     let (mut quad, mut modules) = (res.quad, symbol_modules(&res));
@@ -539,7 +585,14 @@ pub fn read_image(
         let Some(q) = quad else { break };
         blank_symbol(&mut img, &q, modules);
         covered.push(q);
-        let r = read_bgr(path, &img, opts, runner, Instant::now(), deadline, false);
+        let now = Instant::now();
+        #[cfg(feature = "ml")]
+        let r = match aims.as_mut() {
+            Some(aims) => aimed_pass(path, &img, opts, runner, deadline, aims, &covered),
+            None => read_bgr(path, &img, opts, runner, now, deadline, false, &Pass::Full),
+        };
+        #[cfg(not(feature = "ml"))]
+        let r = read_bgr(path, &img, opts, runner, now, deadline, false, &Pass::Full);
         // nothing left, or a read inside a covered symbol (cover failed)
         let Some(rq) = r.quad.filter(|_| !r.data.is_empty()) else {
             break;
@@ -555,6 +608,117 @@ pub fn read_image(
     }
     res.elapsed = t0.elapsed().as_secs_f64();
     Ok(res)
+}
+
+/// Seconds of the classic search on a crop around a detection that the
+/// first try did not read (`aimed_pass`).
+#[cfg(feature = "ml")]
+pub const AIM_CROP_S: f64 = 3.0;
+/// After a first try on a detection that does not read, it runs once more
+/// with a crop this many times the usual size: at the usual size some
+/// symbols fail, depending on the crop, that a larger one reads.
+#[cfg(feature = "ml")]
+pub const AIM_RETRY_K: f32 = 1.5;
+/// Finder score a detection needs for that retry: below it nearly every
+/// detection is a false one.
+#[cfg(feature = "ml")]
+pub const AIM_RETRY_SCORE: f32 = 0.6;
+
+/// A `--multi` pass after a read, aimed at the detector's symbols: nothing
+/// when every one is covered; else the detector first try on the covered
+/// image (its outlines change once a neighbour is covered) and the zxing
+/// ladder, then the first try on each symbol neither covered nor tried yet
+/// (again on a larger crop for a sure detection, `AIM_RETRY_K`), and for
+/// one seen on the whole frame the classic search on a crop around it (at
+/// most `AIM_CROP_S`). There is no classic search on the whole image.
+/// Returns the first read, or an empty result.
+#[cfg(feature = "ml")]
+fn aimed_pass(
+    path: &Path,
+    img: &Bgr8,
+    opts: &ReadOptions,
+    runner: &Runner,
+    deadline: Instant,
+    aims: &mut [crate::detect::Aim],
+    covered: &[Quad],
+) -> ReadResult {
+    let open = |a: &crate::detect::Aim| {
+        let (x, y) = a.centre();
+        !covered.iter().any(|c| inside(c, x, y))
+    };
+    if !aims.iter().any(open) {
+        return ReadResult::new(path);
+    }
+    let mut r = read_bgr(
+        path,
+        img,
+        opts,
+        runner,
+        Instant::now(),
+        deadline,
+        false,
+        &Pass::Quick,
+    );
+    for a in aims.iter_mut() {
+        if !r.data.is_empty() || Instant::now() >= deadline || runner.stopped() {
+            break;
+        }
+        if a.tried || !open(a) {
+            continue;
+        }
+        a.tried = true;
+        let tries = 1 + usize::from(a.det.score >= AIM_RETRY_SCORE);
+        for k in [1.0, AIM_RETRY_K].into_iter().take(tries) {
+            if !r.data.is_empty() || Instant::now() >= deadline {
+                break;
+            }
+            let aimed = Pass::Aimed(a.det.clone(), k);
+            r = read_bgr(
+                path,
+                img,
+                opts,
+                runner,
+                Instant::now(),
+                deadline,
+                false,
+                &aimed,
+            );
+        }
+        if r.data.is_empty() && !a.tile {
+            r = crop_read(path, img, opts, runner, deadline, &a.det.quad);
+        }
+    }
+    r
+}
+
+/// The classic search without the detector on twice the bounding square of
+/// `q` (`detect::crop_box`), at most `AIM_CROP_S`; the result in image
+/// pixels, its variant named `crop > …`.
+#[cfg(feature = "ml")]
+fn crop_read(
+    path: &Path,
+    img: &Bgr8,
+    opts: &ReadOptions,
+    runner: &Runner,
+    deadline: Instant,
+    q: &[[f32; 2]; 4],
+) -> ReadResult {
+    let Some([x0, y0, x1, y1]) = crate::detect::crop_box(q, img.width, img.height, 1.0) else {
+        return ReadResult::new(path);
+    };
+    let crop = crate::detect::crop_bgr(img, x0, y0, x1 - x0, y1 - y0);
+    let o = ReadOptions {
+        detector: false,
+        ..opts.clone()
+    };
+    let now = Instant::now();
+    let dl = deadline.min(now + Duration::from_secs_f64(AIM_CROP_S));
+    let mut r = read_bgr(path, &crop, &o, runner, now, dl, false, &Pass::Full);
+    if !r.data.is_empty() {
+        r.shift(x0 as f64, y0 as f64);
+        r.variant = format!("crop > {}", r.variant);
+    }
+    r
 }
 
 /// Read a camera frame given as a gray image (`ReadOptions.frame`): one
@@ -576,7 +740,16 @@ pub fn read_frame(gray: &Gray8, opts: &ReadOptions, runner: &Runner) -> ReadResu
         ..opts.clone()
     };
     let deadline = t0 + Duration::from_secs_f64(opts.budget_s);
-    let mut res = read_bgr(Path::new("frame"), &bgr, &opts, runner, t0, deadline, true);
+    let mut res = read_bgr(
+        Path::new("frame"),
+        &bgr,
+        &opts,
+        runner,
+        t0,
+        deadline,
+        true,
+        &Pass::Full,
+    );
     res.elapsed = t0.elapsed().as_secs_f64();
     res
 }
@@ -610,7 +783,9 @@ fn orig_quad(q: &Quad, scale: f64, ox: f64, oy: f64) -> Quad {
 }
 
 /// `read_image` on a loaded image. `t0`: start of this pass (for `elapsed`
-/// and the timings); `debug`: write `opts.debug_dir` files.
+/// and the timings); `debug`: write `opts.debug_dir` files; `pass`: what
+/// runs.
+#[allow(clippy::too_many_arguments)]
 fn read_bgr(
     path: &Path,
     bgr: &Bgr8,
@@ -619,7 +794,14 @@ fn read_bgr(
     t0: Instant,
     deadline: Instant,
     debug: bool,
+    pass: &Pass,
 ) -> ReadResult {
+    let full = matches!(pass, Pass::Full);
+    #[cfg(feature = "ml")]
+    let aim = match pass {
+        Pass::Aimed(d, k) => Some((d, *k)),
+        _ => None,
+    };
     let mut res = ReadResult::new(path);
     let mut tm = Timings {
         workers: runner.workers(),
@@ -664,13 +846,13 @@ fn read_bgr(
     let first = if found.is_empty()
         && opts.detector
         && opts.engines.grid
-        && (opts.frame || {
+        && (opts.frame || aim.is_some() || {
             let tg = Instant::now();
             let read = quick_zxing(&gray_orig, opts);
             tm.detector_gate = tg.elapsed().as_secs_f64();
             !read
         }) {
-        let ft = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline);
+        let ft = crate::detect::first_try(bgr, &gray_orig, opts, runner, deadline, aim);
         tm.detector_tries = ft.tries;
         tm.detector_models = ft.models;
         tm.detector_crops = ft.crops;
@@ -689,7 +871,11 @@ fn read_bgr(
             hit: Hit::Grid(v, Box::new(r.clone())),
         });
     }
-    let skip = opts.frame || (!found.is_empty() && !opts.exhaustive);
+    #[cfg(feature = "ml")]
+    let aimed = aim.is_some();
+    #[cfg(not(feature = "ml"))]
+    let aimed = false;
+    let skip = opts.frame || aimed || (!found.is_empty() && !opts.exhaustive);
     let invert = opts.polarity == Polarity::Light;
     let inverted_extra = opts.polarity == Polarity::Any;
     let expect = opts.expect.as_deref();
@@ -761,7 +947,7 @@ fn read_bgr(
     let mut failed_fits: Vec<FitInput> = Vec::new();
     #[cfg(feature = "ml")]
     let mut ml_fits: Vec<(&Variant, NearMiss)> = Vec::new();
-    if !done(&found) && opts.engines.grid && !opts.frame {
+    if !done(&found) && opts.engines.grid && !opts.frame && full {
         gvars = runner.install(|| grid_variants(bgr, invert, inverted_extra));
         tm.grid_variants = lap(&mut t);
         let mut stage: Vec<(&Variant, f64, &[Variant])> =

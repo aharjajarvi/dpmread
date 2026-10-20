@@ -89,7 +89,8 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--budget SEC` | maximum time per image (default 40) |
 | `--expect RxC` | expected symbol size, repeatable; prunes the search |
 | `--polarity any\|dark\|light` | mark polarity (default: try both) |
-| `--multi` | read every symbol in the image |
+| `--multi` | read every symbol in the image; with the symbol detector, the searches after the first read aim at the symbols it sees |
+| `--multi-thorough` | `--multi` with the whole search after each read (slower; finds symbols the detector misses) |
 | `--no-analysis` | after a zxing read, skip the grid fit for the symbol, error-correction and quality fields (faster, same text) |
 | `--engines zxing,grid` | restrict the decoders |
 | `--exhaustive` | try every method and keep the majority result |

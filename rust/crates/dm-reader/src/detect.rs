@@ -7,13 +7,17 @@
 //! so a photo of one part never reports a neighbouring part's code from
 //! here. The first read ends the image; otherwise the classic search runs
 //! as before.
+//!
+//! `--multi` (unless thorough): `symbol_aims` lists the symbols the
+//! detector sees on the whole frame and on tiles; after the first read the
+//! passes aim at them (`read::read_image`).
 
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
 use dm_grid::{Deadline, GridRead, grid_decode_seeds};
 use dm_imgproc::{Bgr8, Gray8};
-use dm_ml::Detector;
+use dm_ml::{Detection, Detector};
 use dm_symbol::Symbol;
 
 use crate::read::{Polarity, ReadOptions, parse_sizes};
@@ -32,8 +36,13 @@ pub const MAIN_AREA: f32 = 0.25;
 /// Polarity probability above which only that polarity is tried.
 pub const SURE_POLARITY: f32 = 0.9;
 
+/// `--multi`: the frame is also searched in `AIM_TILES` x `AIM_TILES`
+/// tiles (half a tile overlap), so that a small symbol in a large photo
+/// reaches the finder at a usable size.
+pub const AIM_TILES: usize = 3;
+
 /// Copy of `[x0, x0 + w) x [y0, y0 + h)`.
-fn crop_bgr(bgr: &Bgr8, x0: usize, y0: usize, w: usize, h: usize) -> Bgr8 {
+pub(crate) fn crop_bgr(bgr: &Bgr8, x0: usize, y0: usize, w: usize, h: usize) -> Bgr8 {
     let mut data = Vec::with_capacity(w * h * 3);
     for y in y0..y0 + h {
         let row = (y * bgr.width + x0) * 3;
@@ -46,6 +55,89 @@ fn crop_bgr(bgr: &Bgr8, x0: usize, y0: usize, w: usize, h: usize) -> Bgr8 {
 /// pay for it (the load alone takes ~0.1 s on a phone).
 pub fn preload() {
     let _ = Detector::embedded().detect(&Gray8::new(64, 48), MIN_SCORE, 1);
+}
+
+/// A symbol the detector sees, for the `--multi` passes.
+pub(crate) struct Aim {
+    pub det: Detection,
+    /// Found on a tile only. Tiles give many false detections, so these
+    /// get the first try but no classic search on a crop.
+    pub tile: bool,
+    /// The first try has run on it.
+    pub tried: bool,
+}
+
+impl Aim {
+    pub fn centre(&self) -> (f32, f32) {
+        centre(&self.det.quad)
+    }
+}
+
+/// `--multi`: the symbols the detector sees on the whole frame, then on
+/// the `AIM_TILES` x `AIM_TILES` tiles, up to `max` per call; a detection
+/// centred inside one kept before is the same symbol. `None` when a model
+/// fails.
+pub(crate) fn symbol_aims(gray: &Gray8, max: usize) -> Option<Vec<Aim>> {
+    let det = Detector::embedded();
+    let mut all: Vec<Aim> = det
+        .detect(gray, MIN_SCORE, max)?
+        .into_iter()
+        .map(|det| Aim {
+            det,
+            tile: false,
+            tried: false,
+        })
+        .collect();
+    let n = AIM_TILES;
+    let (tw, th) = (2 * gray.width / (n + 1), 2 * gray.height / (n + 1));
+    if tw >= 8 && th >= 8 {
+        for ty in 0..n {
+            for tx in 0..n {
+                let (x0, y0) = (tx * tw / 2, ty * th / 2);
+                let mut data = Vec::with_capacity(tw * th);
+                for y in y0..y0 + th {
+                    let row = y * gray.width + x0;
+                    data.extend_from_slice(&gray.data[row..row + tw]);
+                }
+                for mut d in det.detect(&Gray8::from_vec(tw, th, data), MIN_SCORE, max)? {
+                    d.quad = d.quad.map(|[x, y]| [x + x0 as f32, y + y0 as f32]);
+                    all.push(Aim {
+                        det: d,
+                        tile: true,
+                        tried: false,
+                    });
+                }
+            }
+        }
+    }
+    let mut kept: Vec<Aim> = Vec::new();
+    for a in all {
+        if !kept.iter().any(|k| inside(&k.det.quad, a.centre())) {
+            kept.push(a);
+        }
+    }
+    Some(kept)
+}
+
+/// `2 k` times the bounding square of `q` around its centre, clipped to a
+/// `w` x `h` image: `(x0, y0, x1, y1)`, `None` when 8 px or less remain.
+pub(crate) fn crop_box(q: &[[f32; 2]; 4], w: usize, h: usize, k: f32) -> Option<[usize; 4]> {
+    let xs = q.map(|p| p[0]);
+    let ys = q.map(|p| p[1]);
+    let (minx, maxx) = (
+        xs.iter().copied().fold(f32::MAX, f32::min),
+        xs.iter().copied().fold(f32::MIN, f32::max),
+    );
+    let (miny, maxy) = (
+        ys.iter().copied().fold(f32::MAX, f32::min),
+        ys.iter().copied().fold(f32::MIN, f32::max),
+    );
+    let side = (maxx - minx).max(maxy - miny) * k;
+    let (cx, cy) = ((minx + maxx) / 2.0, (miny + maxy) / 2.0);
+    let clamp = |v: f32, hi: usize| v.round().clamp(0.0, hi as f32) as usize;
+    let (x0, y0) = (clamp(cx - side, w), clamp(cy - side, h));
+    let (x1, y1) = (clamp(cx + side, w), clamp(cy + side, h));
+    (x1 > x0 + 8 && y1 > y0 + 8).then_some([x0, y0, x1, y1])
 }
 
 /// What the first try did.
@@ -61,13 +153,15 @@ pub(crate) struct FirstTry {
     pub crops: f64,
 }
 
-/// The first try.
+/// The first try; with `aim`, on that detection only (no models run), its
+/// crop `k` times the usual size.
 pub(crate) fn first_try(
     bgr: &Bgr8,
     gray: &Gray8,
     opts: &ReadOptions,
     runner: &Runner,
     deadline: Instant,
+    aim: Option<(&Detection, f32)>,
 ) -> FirstTry {
     let dl = Deadline {
         at: Some(deadline.min(Instant::now() + Duration::from_secs_f64(FIRST_TRY_S))),
@@ -80,7 +174,10 @@ pub(crate) fn first_try(
         crops: 0.0,
     };
     let t = Instant::now();
-    let dets = Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS);
+    let dets = match aim {
+        Some((d, _)) => Some(vec![d.clone()]),
+        None => Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS),
+    };
     out.models = t.elapsed().as_secs_f64();
     let Some(mut dets) = dets else {
         return out;
@@ -130,25 +227,11 @@ pub(crate) fn first_try(
         }
         let symbols = parse_sizes(&sizes);
         // crop: twice the quad's bounding square around its centre
-        let xs = d.quad.map(|p| p[0]);
-        let ys = d.quad.map(|p| p[1]);
-        let (minx, maxx) = (
-            xs.iter().copied().fold(f32::MAX, f32::min),
-            xs.iter().copied().fold(f32::MIN, f32::max),
-        );
-        let (miny, maxy) = (
-            ys.iter().copied().fold(f32::MAX, f32::min),
-            ys.iter().copied().fold(f32::MIN, f32::max),
-        );
-        let side = (maxx - minx).max(maxy - miny);
-        let (cx, cy) = ((minx + maxx) / 2.0, (miny + maxy) / 2.0);
-        let clamp = |v: f32, hi: usize| v.round().clamp(0.0, hi as f32) as usize;
-        let (x0, y0) = (clamp(cx - side, bgr.width), clamp(cy - side, bgr.height));
-        let (x1, y1) = (clamp(cx + side, bgr.width), clamp(cy + side, bgr.height));
-        if x1 <= x0 + 8 || y1 <= y0 + 8 {
+        let k = aim.map_or(1.0, |a| a.1);
+        let Some([x0, y0, x1, y1]) = crop_box(&d.quad, bgr.width, bgr.height, k) else {
             continue;
-        }
-        if !main.is_some_and(|m| inside(&m, (cx, cy))) {
+        };
+        if !main.is_some_and(|m| inside(&m, box_centre(&d.quad))) {
             continue;
         }
         crops.push(crop_bgr(bgr, x0, y0, x1 - x0, y1 - y0));
@@ -238,6 +321,23 @@ struct Job {
     ox: f64,
     oy: f64,
     symbols: Option<Vec<Symbol>>,
+}
+
+fn centre(q: &[[f32; 2]; 4]) -> (f32, f32) {
+    (
+        q.iter().map(|p| p[0]).sum::<f32>() / 4.0,
+        q.iter().map(|p| p[1]).sum::<f32>() / 4.0,
+    )
+}
+
+/// Centre of the quad's bounding box.
+fn box_centre(q: &[[f32; 2]; 4]) -> (f32, f32) {
+    let (xs, ys) = (q.map(|p| p[0]), q.map(|p| p[1]));
+    let mid = |v: [f32; 4]| {
+        (v.iter().copied().fold(f32::MAX, f32::min) + v.iter().copied().fold(f32::MIN, f32::max))
+            / 2.0
+    };
+    (mid(xs), mid(ys))
 }
 
 fn area(q: &[[f32; 2]; 4]) -> f32 {

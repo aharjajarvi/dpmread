@@ -60,9 +60,14 @@ struct Args {
     #[arg(long, value_enum, default_value = "any")]
     polarity: PolarityArg,
     /// read every symbol in the image: cover each read symbol and read
-    /// the rest again (same budget)
+    /// the rest again (same budget); with the symbol detector the passes
+    /// after the first read aim at the symbols it sees
     #[arg(long)]
     multi: bool,
+    /// --multi with the whole search in every pass, until one reads
+    /// nothing (slower; finds symbols the detector misses)
+    #[arg(long)]
+    multi_thorough: bool,
     /// after a zxing read, skip the grid fit that gives the module matrix,
     /// RS statistics and grades (faster; the text is the same)
     #[arg(long)]
@@ -169,7 +174,8 @@ fn main() -> ExitCode {
             PolarityArg::Light => Polarity::Light,
         },
         debug_dir: args.debug.clone(),
-        multi: args.multi,
+        multi: args.multi || args.multi_thorough,
+        multi_thorough: args.multi_thorough,
         progress: None,
         analyse: !args.no_analysis,
         fit_inputs: args.dump_fits.is_some(),
