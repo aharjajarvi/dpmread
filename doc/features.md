@@ -2,8 +2,9 @@
 
 What dpmread does today, how it does it, how fast it is and how well it
 reads. Planned work is in [roadmap.md](roadmap.md). Figures are for
-version 0.3 (release build, feature `ml`) and are updated with each
-release.
+version 0.4 (release build, feature `ml`) and are updated with each
+release. Single-symbol figures were measured with 0.3; 0.4 changed only
+`--multi`.
 
 ## Contents
 
@@ -231,12 +232,13 @@ Measured on an AMD Ryzen 7 5700X (8 cores, 16 threads), Linux, default
 options, 60 s budget, over the 193 images of the [public test
 sets](#benchmarks):
 
-| | dpmread 0.3 (Rust, feature `ml`) | Python reference (v2) |
+| | dpmread 0.4 (Rust, feature `ml`) | Python reference (v2) |
 |---|---|---|
 | Total time (sum over images) | 108 s | 772 s |
 | Median per image | 0.24 s | 0.93 s |
 | 90th percentile per image | 0.37 s | 2.68 s |
 | Slowest image | 14 s | 57 s |
+| Total time, `--multi` | 254 s (0.3: 745 s) | – |
 
 Most images are read by the library pass in well under a second. The time
 goes into images that need the grid decoder; those take seconds to tens of
@@ -251,8 +253,8 @@ Build and run-time footprint:
 
 | | Linux x86-64 | Windows x64 |
 |---|---|---|
-| CLI binary (feature `ml`) | 27.0 MB | not measured with `ml` yet (7.0 MB without) |
-| GUI binary (feature `ml`) | 34.6 MB | not measured with `ml` yet (17.1 MB without) |
+| CLI binary (feature `ml`) | 27.0 MB | 27.4 MB |
+| GUI binary (feature `ml`) | 34.6 MB | 37.2 MB |
 | Needs | glibc ≥ 2.28 (2018 distributions on); the GUI ships libxkbcommon(-x11) and libxcb-xkb (0.6 MB) | Windows 10 / 11, no Visual C++ Redistributable |
 | CPU | any x86-64; AVX2 / FMA used when present | same |
 
@@ -283,8 +285,8 @@ budget:
 
 | Reader | Hits (images) | False reads | Code level, default | Code level, `--multi` |
 |---|---|---|---|---|
-| dpmread 0.3 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **98.8 %** |
-| dpmread 0.3, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
+| dpmread 0.4 | **188 / 191** (98.4 %) | 0 | 245 codes: 76.7 % | **98.8 %** |
+| dpmread 0.4, zxing-cpp pass only (`--engines zxing`) | 177 / 191 (92.7 %) | 0 | 72.2 % | – |
 | Python reference v1 / v2 | 181 / 191 (94.8 %) | 1 | 73.9 % | – |
 
 Two of the 193 images have no ground truth and are not scored. The

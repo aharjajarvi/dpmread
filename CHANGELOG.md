@@ -7,6 +7,8 @@ versions may change command-line flags and the JSON output.
 
 ## [Unreleased]
 
+## [0.4.0] – 2026-10-20
+
 ### Added
 
 - `--multi-thorough` and the GUI setting *thorough* (builds with `ml`):
@@ -153,7 +155,8 @@ First public release.
 - Release zips for Linux x86-64 and Windows x64 with licence files and
   `SHA256SUMS`, built by GitHub Actions.
 
-[Unreleased]: https://github.com/aharjajarvi/dpmread/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/aharjajarvi/dpmread/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/aharjajarvi/dpmread/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/aharjajarvi/dpmread/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aharjajarvi/dpmread/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aharjajarvi/dpmread/releases/tag/v0.1.0

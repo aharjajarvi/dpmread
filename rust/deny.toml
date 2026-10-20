@@ -11,6 +11,10 @@ ignore = [
     # paste: unmaintained, no known vulnerability; a build-time macro of the
     # pinned zxing-cpp 0.5.1 crate, gone when that dependency moves on
     { id = "RUSTSEC-2024-0436", reason = "unmaintained build-time macro of zxing-cpp 0.5.1" },
+    # basic-toml: unmaintained, no known vulnerability; reads askama's
+    # template config in uniffi's binding generator (dm-ffi only, not in the
+    # release zips); uniffi 0.32.2 and askama 0.16.1 are the latest
+    { id = "RUSTSEC-2026-0374", reason = "unmaintained build-time config reader of uniffi's askama" },
 ]
 
 [licenses]
