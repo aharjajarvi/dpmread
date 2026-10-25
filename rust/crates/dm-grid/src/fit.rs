@@ -188,6 +188,45 @@ pub fn fixed_pattern_too_damaged(g: &Geometry, fixed_errors: usize) -> bool {
     fixed_errors as f64 > WEAK_RS_MAX_FIXED_ERRORS * n_fixed as f64
 }
 
+/// Symbols with at most this many check codewords per block (10x10 to
+/// 16x16, 8x18, 8x32): a wrong grid that RS accepts usually needs all of
+/// their error correction (CORE-133).
+pub const SMALL_RS_ECC: usize = 12;
+/// Axial nonuniformity above which a read must keep a correction in
+/// reserve. True reads reach 0.35, false 10x10 reads 0.54 and 0.68.
+pub const SUSPECT_AXIAL: f64 = 0.4;
+/// Share of wrong finder / timing modules above which a small symbol must
+/// keep a correction in reserve. True small-symbol reads reach 15.4 %,
+/// a false 14x14 21.2 %.
+pub const SUSPECT_SMALL_FIXED_ERRORS: f64 = 0.16;
+
+/// |module width - module height| / their mean, from the quad's sides.
+pub fn axial_nonuniformity(quad: &Quad, g: &Geometry) -> f64 {
+    let d = |a: [f32; 2], b: [f32; 2]| ((b[0] - a[0]) as f64).hypot((b[1] - a[1]) as f64);
+    let w = (d(quad[0], quad[1]) + d(quad[3], quad[2])) / 2.0 / g.cols as f64;
+    let h = (d(quad[0], quad[3]) + d(quad[1], quad[2])) / 2.0 / g.rows as f64;
+    (w - h).abs() / ((w + h) / 2.0).max(1e-9)
+}
+
+/// A read that looks wrong (grid far from square, or a small symbol with a
+/// damaged finder / timing pattern) and leaves no error correction unused:
+/// it may use erasures and must leave room for one more corrected codeword.
+pub fn suspect_without_margin(
+    g: &Geometry,
+    quad: &Quad,
+    fixed_errors: usize,
+    rs: &RSResult,
+) -> bool {
+    let n_fixed = g.fixed_mask.iter().filter(|&&m| m).count().max(1);
+    let damaged = g.n_ecc <= SMALL_RS_ECC
+        && fixed_errors as f64 > SUSPECT_SMALL_FIXED_ERRORS * n_fixed as f64;
+    if !damaged && axial_nonuniformity(quad, g) <= SUSPECT_AXIAL {
+        return false;
+    }
+    // one more error costs 2 check codewords
+    rs.block_erasures.iter().any(|&f| f > 0) || rs.uec < 2.0 / g.n_ecc as f64 - 1e-9
+}
+
 /// Sample the fit (even grid, or timing-tracked centres) and decode.
 pub fn try_fit(
     sampler: &Sampler,
@@ -225,6 +264,9 @@ pub fn try_fit_values(fit: &mut GridFit, mode: Mode, vals: GrayF32) -> Option<(R
         return None;
     }
     let rs = timed(Stage::Rs, || rs_decode_symbol(&cw, &cconf, g))?;
+    if suspect_without_margin(g, &fit.quad, fit.fixed_errors, &rs) {
+        return None;
+    }
     let dec = decode_codewords(&rs.data_cw).ok()?;
     if dec.data.is_empty() || !plausible(&dec) {
         return None;

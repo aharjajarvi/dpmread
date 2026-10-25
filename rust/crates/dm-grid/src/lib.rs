@@ -27,8 +27,9 @@ pub use crate::decode::{
     GridRead, MAX_QUADS, NO_QZ_STRONG_FACTOR, STRONG_FIT, grid_decode, grid_decode_seeds,
 };
 pub use crate::fit::{
-    GridFit, Mode, WEAK_RS_ECC, WEAK_RS_MAX_FIXED_ERRORS, anti_transposed, classify,
-    codewords_from_bits, fixed_pattern_too_damaged, plausible, try_fit, try_fit_values, zscore,
+    GridFit, Mode, SMALL_RS_ECC, SUSPECT_AXIAL, SUSPECT_SMALL_FIXED_ERRORS, WEAK_RS_ECC,
+    WEAK_RS_MAX_FIXED_ERRORS, anti_transposed, axial_nonuniformity, classify, codewords_from_bits,
+    fixed_pattern_too_damaged, plausible, suspect_without_margin, try_fit, try_fit_values, zscore,
 };
 pub use crate::mlinput::{FitMap, INPUT_MARGIN, INPUT_PPM, symbol_input};
 pub use crate::nearmiss::{
