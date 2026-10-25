@@ -3,9 +3,10 @@
 # here; the public benchmark sets are compared against baseline/.
 name: CI
 
+# No run on push to main: the ruleset requires a PR branch to be up to date
+# with main, so what lands is what the PR run tested. The nightly run checks
+# main and keeps its caches warm for PRs.
 on:
-  push:
-    branches: [main]
   pull_request:
   schedule:
     - cron: "17 3 * * *"
