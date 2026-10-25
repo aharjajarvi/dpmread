@@ -9,7 +9,7 @@ use dm_codec::decode_codewords;
 use dm_ecc::rs_decode_symbol;
 use dm_grid::{
     FitMap, GridFit, GridRead, NearMiss, anti_transposed, codewords_from_bits,
-    fixed_pattern_too_damaged, near_miss_key, plausible, symbol_input,
+    fixed_pattern_too_damaged, near_miss_key, plausible, suspect_without_margin, symbol_input,
 };
 use dm_imgproc::{GrayF32, Image};
 use dm_ml::Classifier;
@@ -86,8 +86,8 @@ fn read_probs(d: &NearMiss, g: &'static Geometry, p: GrayF32) -> Option<GridRead
     decode(t, &p, !d.mirrored, d.qz)
 }
 
-/// Bit = p > 0.5, confidence = abs(p - 0.5) x 2; the weak-RS and
-/// `plausible` checks of `try_fit_values`.
+/// Bit = p > 0.5, confidence = abs(p - 0.5) x 2; the weak-RS, suspect-read
+/// and `plausible` checks of `try_fit_values`.
 fn decode(mut fit: GridFit, p: &GrayF32, mirrored: bool, qz: bool) -> Option<GridRead> {
     let g = fit.geom;
     let bits: Vec<u8> = p.data.iter().map(|&p| u8::from(p > 0.5)).collect();
@@ -107,6 +107,9 @@ fn decode(mut fit: GridFit, p: &GrayF32, mirrored: bool, qz: bool) -> Option<Gri
     }
     let (cw, cconf) = codewords_from_bits(&bits, &conf, g);
     let rs = rs_decode_symbol(&cw, &cconf, g)?;
+    if suspect_without_margin(g, &fit.quad, fixed_errors, &rs) {
+        return None;
+    }
     let dec = decode_codewords(&rs.data_cw).ok()?;
     if dec.data.is_empty() || !plausible(&dec) {
         return None;
