@@ -12,6 +12,14 @@ versions may change command-line flags and the JSON output.
 - `--files N`: read N images at once, each with its own `--jobs` workers;
   results are printed in input order.
 
+### Changed
+
+- Symbol detector (feature `ml`): the finder and measurer are fine-tuned
+  again, on more real camera frames, among them frames the reader did not
+  read before. On 767 held-out frames the `ml` build reads 646 codes
+  instead of 559 and takes 2.6 s per frame instead of 3.6 s; the public
+  sets read as before.
+
 ## [0.4.0] – 2026-10-20
 
 ### Added
