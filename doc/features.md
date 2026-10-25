@@ -245,7 +245,12 @@ goes into images that need the grid decoder; those take seconds to tens of
 seconds and stop at the budget if nothing decodes. After a library read,
 the grid fit that fills in the symbol, error-correction and quality fields
 gets at most 2 s; `--no-analysis` skips it (same text, those fields
-absent). On the project's own set
+absent). For folders, `--files N` reads N images at once, each with its
+own `--jobs` workers: the `--multi` run over the public sets takes 263 s of
+wall time one image at a time (default), about 114 s with `--files 4
+--jobs 4` and 100 s with `--files 16 --jobs 1`, with the same reads. The
+budget is wall time, so on a shared CPU an image that needs most of it may
+end with fewer attempts. On the project's own set
 of hard wood marks, the Rust reader is about 5.6 times faster than the
 Python reference with identical results.
 

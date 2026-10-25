@@ -45,7 +45,7 @@ Detailed plans may exist outside this repository; a local, untracked
 
 ```fish
 rust/target/release/dpmread IMAGE_OR_FOLDER [...] [--json] [--debug DIR] \
-    [--engines zxing,grid] [--budget SEC] [--jobs N] [--expect RxC] \
+    [--engines zxing,grid] [--budget SEC] [--jobs N] [--files N] [--expect RxC] \
     [--polarity dark|light|any] [--exhaustive] [--matrix] [--multi] [--multi-thorough] [--dump-fits DIR] \
     [--no-classifier] [--no-detector] [--frame]   # cargo build --release -p dm-cli --features ml
 rust/target/release/dpmread-gui [IMAGE_OR_FOLDER ...]   # cargo build --release in rust/
@@ -82,14 +82,14 @@ release, never on your own.
 |---|---|---|
 | `--fast` | fmt, clippy (`-D warnings`), `cargo deny` without advisories, `cargo test --workspace` without the `#[ignore]`d tests and `round_trip`, parity gate against v2 with the `ci` build profile (no LTO) | ~40 s |
 | `--gui` | fmt; fails if uncommitted files outside `rust/crates/dm-gui/` changed; clippy and tests of `dm-gui` (ignored ones included), debug build of `dpmread-gui` | ~20 s |
-| `--quick` | fmt, clippy, `cargo deny check` (with advisories), `THIRD_PARTY_LICENSES.md` up to date, all tests (`--include-ignored`), release build, `parity.py --jobs-check` (output independent of `--jobs`) | ~6 min |
+| `--quick` | fmt, clippy, `cargo deny check` (with advisories), `THIRD_PARTY_LICENSES.md` up to date, all tests (`--include-ignored`), release build, `parity.py --jobs-check` (output independent of `--jobs` and `--files`) | ~6 min |
 | (none) | `--quick`, then the public sets against `baseline/public_rust*.json`, the old-glibc build (Windows: native `.exe` build and `check_dlls.py`) and the release zip | ~27 min |
 
 Run `--quick` instead of `--fast` when the change touches:
 
 | Change | What only `--quick` checks |
 |---|---|
-| Threads, job order, `--jobs`, budgets or deadlines | `--jobs-check` |
+| Threads, job order, `--jobs`, `--files`, budgets or deadlines | `--jobs-check` |
 | The numbers an image op, sampler or variant ladder computes (`dm-imgproc`, `dm-grid`, `dm-reader` variants), not a refactor | the `#[ignore]`d fixture tests, pixel-exact against Python |
 | Grid sampling or decoding (`dm-grid`) or the symbol tables (`dm-symbol`) | `round_trip`: every symbol size, clean and degraded |
 | `Cargo.toml`, `Cargo.lock`, build profiles, `rust/.cargo/`, build scripts | the release build that ships; advisories; `THIRD_PARTY_LICENSES.md` (regenerate in `rust/` with `cargo about generate --fail about.hbs -o ../THIRD_PARTY_LICENSES.md`) |

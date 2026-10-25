@@ -94,7 +94,8 @@ dpmread photo.jpg --debug out/        # enhancement variants + annotated result
 | `--no-analysis` | after a zxing read, skip the grid fit for the symbol, error-correction and quality fields (faster, same text) |
 | `--engines zxing,grid` | restrict the decoders |
 | `--exhaustive` | try every method and keep the majority result |
-| `--jobs N` | worker threads (results do not depend on it) |
+| `--jobs N` | worker threads per image (results do not depend on it) |
+| `--files N` | images read at once, each with its own `--jobs` workers (default 1); output stays in input order. The budget is wall time, so on a loaded CPU an image that needs most of its budget may get fewer attempts |
 | `--matrix` | print the sampled module matrix |
 | `--debug DIR` | save the enhancement variants and an annotated image |
 | `--dump-fits DIR` | save each image's grid fits (module centres and the symbol resampled through the fit), for training a module classifier |
