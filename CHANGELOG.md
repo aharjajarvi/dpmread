@@ -7,6 +7,11 @@ versions may change command-line flags and the JSON output.
 
 ## [Unreleased]
 
+### Added
+
+- `--files N`: read N images at once, each with its own `--jobs` workers;
+  results are printed in input order.
+
 ## [0.4.0] – 2026-10-20
 
 ### Added

@@ -3,8 +3,10 @@
 //! any failed (or could not be loaded), 2 on a usage error.
 
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use clap::{Parser, ValueEnum};
 use dm_reader::timing::STAGE_NAMES;
@@ -48,9 +50,14 @@ struct Args {
     /// max seconds per image
     #[arg(long, default_value_t = 40.0)]
     budget: f64,
-    /// worker threads (1 = sequential)
+    /// worker threads per image (1 = sequential)
     #[arg(long, default_value_t = default_jobs())]
     jobs: usize,
+    /// images read at once, each with its own --jobs workers (results are
+    /// printed in input order; the budget is wall time, so an image may
+    /// get fewer attempts on a loaded CPU)
+    #[arg(long, default_value_t = 1)]
+    files: usize,
     /// expected symbol size(s), e.g. 24x24 (repeatable; like the trained
     /// model of an industrial reader, prunes the grid search)
     #[arg(long, value_name = "RxC")]
@@ -183,43 +190,81 @@ fn main() -> ExitCode {
         detector: !args.no_detector,
         frame: false,
     };
-    let runner = Runner::new(args.jobs.max(1));
     // frames: load the detector models before the first one, as an app does
     #[cfg(feature = "ml")]
     if args.frame && opts.detector {
         dm_reader::detect::preload();
     }
+    let read = |path: &Path, runner: &Runner| {
+        if args.frame {
+            read_frame_file(path, &opts, runner)
+        } else {
+            read_image(path, &opts, runner)
+        }
+    };
+    let paths = collect_inputs(&inputs);
     let mut results = Vec::new();
     let mut failed = false;
-    for path in collect_inputs(&inputs) {
-        let r = if args.frame {
-            read_frame_file(&path, &opts, &runner)
-        } else {
-            read_image(&path, &opts, &runner)
-        };
-        match r {
-            Ok(mut res) => {
-                if let Some(dir) = &args.dump_fits {
-                    if let Err(e) = write_fit_dump(dir, &res) {
-                        eprintln!("{}: --dump-fits: {e}", path.display());
-                        failed = true;
-                    }
-                    res.fits.clear();
+    let mut handle = |path: &Path, r: Result<ReadResult, _>| match r {
+        Ok(mut res) => {
+            if let Some(dir) = &args.dump_fits {
+                if let Err(e) = write_fit_dump(dir, &res) {
+                    eprintln!("{}: --dump-fits: {e}", path.display());
+                    failed = true;
                 }
-                if !args.json {
-                    print!("{}", report_text(&res, args.matrix));
-                }
-                if let Some(t) = &res.timings {
-                    eprintln!("{}", timings_line(&res, t));
-                }
-                failed |= res.data.is_empty();
-                results.push(res);
+                res.fits.clear();
             }
-            Err(e) => {
-                eprintln!("{e}");
-                failed = true;
+            if !args.json {
+                print!("{}", report_text(&res, args.matrix));
             }
+            if let Some(t) = &res.timings {
+                eprintln!("{}", timings_line(&res, t));
+            }
+            failed |= res.data.is_empty();
+            results.push(res);
         }
+        Err(e) => {
+            eprintln!("{e}");
+            failed = true;
+        }
+    };
+    let files = args.files.clamp(1, paths.len().max(1));
+    if files == 1 {
+        let runner = Runner::new(args.jobs.max(1));
+        for path in &paths {
+            handle(path, read(path, &runner));
+        }
+    } else {
+        // `files` readers take the next image in turn; results are handled
+        // in input order, so the output does not depend on which finishes first
+        let next = AtomicUsize::new(0);
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|s| {
+            for _ in 0..files {
+                let tx = tx.clone();
+                let (next, paths, read) = (&next, &paths, &read);
+                s.spawn(move || {
+                    let runner = Runner::new(args.jobs.max(1));
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(path) = paths.get(i) else { break };
+                        if tx.send((i, read(path, &runner))).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            drop(tx);
+            let mut slots: Vec<Option<_>> = paths.iter().map(|_| None).collect();
+            let mut done = 0;
+            for (i, r) in rx {
+                slots[i] = Some(r);
+                while let Some(r) = slots.get_mut(done).and_then(Option::take) {
+                    handle(&paths[done], r);
+                    done += 1;
+                }
+            }
+        });
     }
     if args.json {
         println!("{}", to_json(&results));

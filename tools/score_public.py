@@ -100,6 +100,8 @@ def run_reader(args: argparse.Namespace, sets: list[str]) -> tuple[dict, list[di
         cmd += ["--engines", args.engines]
     if args.jobs:
         cmd += ["--jobs", str(args.jobs)]
+    if args.files:
+        cmd += ["--files", str(args.files)]
     if args.multi:
         cmd += ["--multi"]
     print("running:", " ".join(cmd), file=sys.stderr)
@@ -275,6 +277,7 @@ def main() -> None:
     ap.add_argument("--budget", type=float, default=60.0)
     ap.add_argument("--engines", help="passed to the reader, e.g. zxing")
     ap.add_argument("--jobs", type=int)
+    ap.add_argument("--files", type=int, help="images read at once (Rust reader only)")
     ap.add_argument("--multi", action="store_true",
                     help="pass --multi (every symbol per image; Rust reader only)")
     ap.add_argument("--json-in", type=Path, help="score this saved / reader JSON instead of running")

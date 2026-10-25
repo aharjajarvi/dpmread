@@ -9,12 +9,12 @@ are listed separately (check them by hand: a wrong read is worse than none).
 python rust/tools/parity.py                    # baseline JSON vs a fresh Rust run
 python rust/tools/parity.py --run-python       # fresh runs of both
 python rust/tools/parity.py --rust-json r.json # an existing Rust output
-python rust/tools/parity.py --jobs-check       # also: Rust --jobs 1 == default jobs
+python rust/tools/parity.py --jobs-check       # also: Rust --jobs 1 == default jobs, 4 files
 python rust/tools/parity.py --baseline v1      # the frozen v1 oracle (phases 0-4)
 python rust/tools/parity.py --dpmread rust/target/ci/dpmread  # another build (ci.sh --fast)
 
-The jobs check runs dpmread twice more (default jobs and --jobs 1) with
---jobs-budget (default 600 s): with the gate's 60 s the sequential run
+The jobs check runs dpmread twice more (default jobs with --files 4, and
+--jobs 1) with --jobs-budget (default 600 s): with the gate's 60 s the sequential run
 stops early on the large failing photos (~130 s of CPU each), which changes
 attempts and near misses through the budget, not through the job order.
 
@@ -56,7 +56,7 @@ def run(cmd: list[str]) -> tuple[list[dict], float]:
 
 
 def run_rust(args: argparse.Namespace, jobs: int | None = None,
-             budget: float | None = None) -> tuple[list[dict], float]:
+             budget: float | None = None, files: int | None = None) -> tuple[list[dict], float]:
     exe = (args.dpmread or DPMREAD).resolve()  # dpmread runs in DM_PRIVATE_DIR
     exe = exe.with_suffix(".exe") if os.name == "nt" else exe
     if not exe.exists():
@@ -64,6 +64,8 @@ def run_rust(args: argparse.Namespace, jobs: int | None = None,
     cmd = [str(exe), "--json", "--budget", str(budget or args.budget), *args.folders]
     if jobs is not None:
         cmd += ["--jobs", str(jobs)]
+    if files is not None:
+        cmd += ["--files", str(files)]
     return run(cmd)
 
 
@@ -84,7 +86,12 @@ def summary(e: dict | None) -> dict:
 
 
 def strip_times(results: list[dict]) -> list[dict]:
-    return [{k: v for k, v in e.items() if k != "elapsed_s"} for e in results]
+    def strip(e: dict) -> dict:
+        e = {k: v for k, v in e.items() if k != "elapsed_s"}
+        if "more_symbols" in e:
+            e["more_symbols"] = [strip(m) for m in e["more_symbols"]]
+        return e
+    return [strip(e) for e in results]
 
 
 def speed(results: list[dict]) -> tuple[float, float, float]:
@@ -104,7 +111,7 @@ def main() -> None:
     ap.add_argument("--dpmread", type=Path, help=f"dpmread to run (default: {DPMREAD})")
     ap.add_argument("--budget", type=float, default=60.0)
     ap.add_argument("--jobs-check", action="store_true",
-                    help="also run dpmread with --jobs 1 and default jobs and compare")
+                    help="also run dpmread with --jobs 1 and default jobs (4 files) and compare")
     ap.add_argument("--jobs-budget", type=float, default=600.0,
                     help="budget of the two jobs-check runs (large enough for --jobs 1)")
     ap.add_argument("folders", nargs="*", default=FOLDERS)
@@ -169,11 +176,11 @@ def main() -> None:
 
     ok = not lost and not changed and not missing
     if args.jobs_check:
-        par, par_wall = run_rust(args, budget=args.jobs_budget)
+        par, par_wall = run_rust(args, budget=args.jobs_budget, files=4)
         seq, seq_wall = run_rust(args, jobs=1, budget=args.jobs_budget)
         same = strip_times(seq) == strip_times(par)
         print(f"jobs check (budget {args.jobs_budget:g} s): --jobs 1 ({seq_wall:.0f} s) "
-              f"{'identical to' if same else 'DIFFERS from'} default jobs ({par_wall:.0f} s)")
+              f"{'identical to' if same else 'DIFFERS from'} default jobs, 4 files ({par_wall:.0f} s)")
         for a, b in zip(strip_times(par), strip_times(seq)):
             if a != b:
                 keys = [k for k in a.keys() | b.keys() if a.get(k) != b.get(k)]
