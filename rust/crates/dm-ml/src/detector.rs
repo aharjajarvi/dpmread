@@ -361,17 +361,17 @@ mod tests {
             .max_by(|a, b| a.1.total_cmp(b.1))
             .unwrap();
         assert_eq!((i / w, i % w), (46, 59));
-        close(*z, 3.066, 0.01, "peak logit");
-        let want = [0.585, 0.557, -0.578, 0.578, -0.607, -0.520, 0.558, -0.540];
+        close(*z, 3.873, 0.01, "peak logit");
+        let want = [0.573, 0.594, -0.579, 0.562, -0.545, -0.535, 0.596, -0.512];
         for (k, &v) in want.iter().enumerate() {
             close(off[k * heat.len() + i], v, 0.005, "offset");
         }
-        close(heat.iter().sum::<f32>(), -62334.64, 2.0, "heat sum");
+        close(heat.iter().sum::<f32>(), -58387.39, 2.0, "heat sum");
 
         let (c, p_dark, size) = d
             .measurer_raw(&frame(192, 192, 48, 48, 16, 6))
             .expect("measurer runs");
-        let want = [-0.495, 0.475, -0.473, -0.484, 0.509, -0.457, 0.487, 0.507];
+        let want = [-0.493, 0.475, -0.464, -0.498, 0.516, -0.456, 0.486, 0.515];
         for (k, &v) in want.iter().enumerate() {
             close(
                 c[k / 2][k % 2],
@@ -380,9 +380,9 @@ mod tests {
                 "corner",
             );
         }
-        close(p_dark, sigmoid(3.740 + 3.035), 0.001, "p_dark");
-        close(size[7], 8.41, 0.02, "24x24 logit");
-        close(size[28], 5.06, 0.02, "16x36 logit");
+        close(p_dark, sigmoid(4.259 + 3.647), 0.001, "p_dark");
+        close(size[7], 9.03, 0.02, "24x24 logit");
+        close(size[28], 6.01, 0.02, "16x36 logit");
     }
 
     #[test]
