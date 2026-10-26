@@ -22,8 +22,13 @@ release. Single-symbol figures were measured with 0.3; 0.4 changed only
 
 ```mermaid
 flowchart TD
-    img([image]) --> lad["colour channels → enhancement ladder<br/>(+ tiles of large photos)"]
-    lad --> zx["zxing-cpp pass on every variant"]
+    img([image]) --> gate["one zxing call on the gray image"]
+    gate -- read --> lad
+    gate -- no read --> det["symbol detector: finder on the whole frame,<br/>measurer on a crop of each symbol"]
+    det --> ft["grid decoder on crops: main symbol,<br/>other large detections, nudged corners"]
+    ft -- no read --> lad
+    ft -- read --> res
+    lad["colour channels → enhancement ladder<br/>(+ tiles of large photos)"] --> zx["zxing-cpp pass on every variant"]
     zx -- no read --> gv["grid decoder on grey variants and unread tiles:<br/>candidate quads, grid fit on finder / timing pattern"]
     zx -. failed outlines as candidates .-> gv
     gv --> rs["sample with confidence,<br/>Reed-Solomon with erasures"]
@@ -32,14 +37,27 @@ flowchart TD
     ex -- "fails, weak fit" --> warp
     resc -- fails --> warp["warped grid"]
     warp -- fails --> qz["fit, sampling, rescue again<br/>without the quiet zone"]
-    qz -- fails --> nm([near miss report])
+    qz -- fails --> mc["module classifier on the<br/>three best failed fits"]
+    mc -- fails --> nm([near miss report])
     zx -- read --> res([decoded text])
     rs -- read --> res
     ex -- read --> res
     resc -- read --> res
     warp -- read --> res
     qz -- read --> res
+    mc -- read --> res
+    classDef ml stroke-dasharray: 5 3
+    class gate,det,ft,mc ml
 ```
+
+The dashed boxes run only in builds with the cargo feature `ml` (the
+release zips): the symbol detector before the enhancement ladder and the
+module classifier after every grid attempt (both described under
+[Output](#output)). Without `ml`, or with `--no-detector`, a read starts at
+the enhancement ladder. The networks never place modules for the decoder:
+the detector only gives corners, polarity and sizes to the reader's own
+grid fit, and the classifier only replaces the dark / light threshold on
+fits the grid decoder has already made.
 
 1. **Colour channels.** The image is converted to several grey channels
    (luminance, inverted saturation, blue, L\*), because a burn on wood often
@@ -168,11 +186,19 @@ overwrite each other's files.
 
 **Symbol detector** (cargo feature `ml`, on in the release zips, off in a
 plain `cargo build`): when one zxing call on the gray image does not read,
-a finder network on the whole frame and a measurer on a full-resolution
-crop give the main symbol's corners, polarity and three size candidates;
-the grid decoder tries them on a crop first, and zxing and the variant
-ladder run only when that gives no read. The report names the variant
-`detector > …`. Weights are embedded in `dm-ml` (tract). `--no-detector`
+a finder network on the whole frame gives up to three symbols, and a
+measurer on a full-resolution crop of each refines its corners and gives
+its polarity and three size candidates. The grid decoder then tries them
+on a crop around each, the first read ending the image: first the main
+symbol (the one nearest the image centre among those of at least a
+quarter of the largest one's area) and the detections inside it; then the
+other symbols of that area, on fewer grey variants; last the main
+symbol's corners moved half a module outwards and inwards. Small symbols
+off the main one are not tried, so a photo of one part does not report a
+neighbouring part's code from here. The first try stops after 3 s; zxing
+and the variant ladder run only when it gives no read. With a sure
+polarity (above 90 %) only that polarity is tried. The report names the
+variant `detector > …`. Weights are embedded in `dm-ml` (tract). `--no-detector`
 or the GUI setting turns it off.
 
 **Module classifier** (cargo feature `ml`, as the detector): when every
