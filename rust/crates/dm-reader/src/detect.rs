@@ -3,10 +3,12 @@
 //! (`dm_ml::Detector`) gives up to `DETECTIONS` symbol quads with size
 //! candidates and polarity. The main symbol (nearest the image centre
 //! among the large ones) and the detections centred inside it go to `grid_decode_seeds` on the grid variants of a crop
-//! around each, quiet-zone template first; other symbols are not tried,
-//! so a photo of one part never reports a neighbouring part's code from
-//! here. The first read ends the image; otherwise the classic search runs
-//! as before.
+//! around each, quiet-zone template first; then the other large
+//! detections, on `FURTHER_MEMBERS` only; last the main symbol's quad
+//! grown and shrunk by `NUDGE_MODULES`. Small detections off the main
+//! symbol are not tried, so a photo of one part does not report a
+//! neighbouring part's code from here. The first read ends the image;
+//! otherwise the classic search runs as before.
 //!
 //! `--multi` (unless thorough): `symbol_aims` lists the symbols the
 //! detector sees on the whole frame and on tiles; after the first read the
@@ -31,10 +33,20 @@ pub const MIN_SCORE: f32 = 0.3;
 /// Time the first try may take; the classic search gets the rest.
 pub const FIRST_TRY_S: f64 = 3.0;
 /// Smallest area, as a share of the largest detection's, a detection needs
-/// to be the main symbol.
+/// to be the main symbol or a further one.
 pub const MAIN_AREA: f32 = 0.25;
+/// Modules a side the main symbol's quad is grown and shrunk by in the
+/// last jobs: a quad a pixel or two off can decide a read.
+pub const NUDGE_MODULES: f32 = 0.5;
 /// Polarity probability above which only that polarity is tried.
 pub const SURE_POLARITY: f32 = 0.9;
+
+/// The grid members tried on further detections and on the nudged quads:
+/// the ones that read there (the other channels and `inv-gray` only cost
+/// time).
+fn few_member(m: GridMember) -> bool {
+    matches!(m, GridMember::Flat(0) | GridMember::Gray)
+}
 
 /// `--multi`: the frame is also searched in `AIM_TILES` x `AIM_TILES`
 /// tiles (half a tile overlap), so that a small symbol in a large photo
@@ -179,37 +191,19 @@ pub(crate) fn first_try(
         None => Detector::embedded().detect(gray, MIN_SCORE, DETECTIONS),
     };
     out.models = t.elapsed().as_secs_f64();
-    let Some(mut dets) = dets else {
+    let Some(dets) = dets else {
         return out;
     };
-    // only the main symbol: in a photo of one part it is that part's code,
-    // and a read of another would report a neighbouring part's code. Main =
-    // the one nearest the image centre among those of at least
-    // `MAIN_AREA` x the largest area; detections centred inside it are the
-    // same symbol
-    let largest = dets.iter().map(|d| area(&d.quad)).fold(0.0, f32::max);
-    let (w, h) = (gray.width as f32, gray.height as f32);
-    let off_centre = |q: &[[f32; 2]; 4]| {
-        let (cx, cy) = (
-            q.iter().map(|p| p[0]).sum::<f32>() / 4.0,
-            q.iter().map(|p| p[1]).sum::<f32>() / 4.0,
-        );
-        ((cx / w - 0.5).powi(2) + (cy / h - 0.5).powi(2)).sqrt()
-    };
-    let main = dets
-        .iter()
-        .filter(|d| area(&d.quad) >= MAIN_AREA * largest)
-        .min_by(|a, b| off_centre(&a.quad).total_cmp(&off_centre(&b.quad)))
-        .map(|d| d.quad);
-    dets.sort_by_key(|d| !main.is_some_and(|m| m == d.quad));
-    // one job per (detection, grid variant member), in that order; each
+    // one job per (detection, grid variant member), in `try_order`; each
     // job builds its member's variants of the crop, so the first job (the
-    // variant that reads most often) starts at once. The first read in job
-    // order wins
+    // variant that reads most often) starts at once. The nudged quads of
+    // the main group come last. The first read in job order wins
     let mut crops: Vec<Bgr8> = Vec::new();
     let mut jobs: Vec<Job> = Vec::new();
+    let mut nudge: Vec<Job> = Vec::new();
     let t = Instant::now();
-    for d in &dets {
+    for (i, further) in try_order(&dets, gray.width as f32, gray.height as f32) {
+        let d = &dets[i];
         let (invert, both) = match opts.polarity {
             Polarity::Dark => (false, false),
             Polarity::Light => (true, false),
@@ -231,23 +225,28 @@ pub(crate) fn first_try(
         let Some([x0, y0, x1, y1]) = crop_box(&d.quad, bgr.width, bgr.height, k) else {
             continue;
         };
-        if !main.is_some_and(|m| inside(&m, box_centre(&d.quad))) {
-            continue;
-        }
         crops.push(crop_bgr(bgr, x0, y0, x1 - x0, y1 - y0));
         let quad = d.quad.map(|[x, y]| [x - x0 as f32, y - y0 as f32]);
         for member in grid_members(invert, both) {
-            jobs.push(Job {
+            if further && !few_member(member) {
+                continue;
+            }
+            let job = |seeds: Vec<[[f32; 2]; 4]>| Job {
                 crop: crops.len() - 1,
                 invert,
                 member,
-                quad,
+                seeds,
                 ox: x0 as f64,
                 oy: y0 as f64,
                 symbols: symbols.clone(),
-            });
+            };
+            jobs.push(job(vec![quad]));
+            if !further && few_member(member) {
+                nudge.push(job(nudged(&quad, d.sizes[0]).to_vec()));
+            }
         }
     }
+    jobs.extend(nudge);
     out.crops = t.elapsed().as_secs_f64();
     // the first job alone (it reads most often; on a phone its siblings
     // slow it down by more than they gain), then the rest in parallel. A
@@ -264,9 +263,13 @@ pub(crate) fn first_try(
                 break;
             }
             let s = gv.scale as f32;
-            let quad = j.quad.map(|[x, y]| [x * s, y * s]);
+            let seeds: Vec<_> = j
+                .seeds
+                .iter()
+                .map(|q| q.map(|[x, y]| [x * s, y * s]))
+                .collect();
             calls += 1;
-            let r = grid_decode_seeds(&gv.img, &dl, &[quad], &[true, false], j.symbols.as_deref());
+            let r = grid_decode_seeds(&gv.img, &dl, &seeds, &[true, false], j.symbols.as_deref());
             if let Some(r) = r {
                 let v = Variant {
                     name: format!("detector > {}", gv.name),
@@ -311,16 +314,68 @@ pub(crate) fn first_try(
 }
 
 /// One first-try job: a grid variant member of a crop (`crops` index,
-/// offsets in original pixels), the detection's quad in crop pixels and
-/// the sizes to try.
+/// offsets in original pixels), the seed quads in crop pixels and the
+/// sizes to try.
 struct Job {
     crop: usize,
     invert: bool,
     member: GridMember,
-    quad: [[f32; 2]; 4],
+    seeds: Vec<[[f32; 2]; 4]>,
     ox: f64,
     oy: f64,
     symbols: Option<Vec<Symbol>>,
+}
+
+/// The detections the first try uses, in order, `true` for a further one:
+/// the main symbol, the detections centred inside it, then the further
+/// ones. Main = the one nearest the image centre among those of at least
+/// `MAIN_AREA` x the largest area (in a photo of one part it is that
+/// part's code); further = the others of that area not centred inside one
+/// before, in `dets` order (best score first). A neighbouring part's code
+/// in a photo of one part is small or cut, so it is not tried.
+fn try_order(dets: &[Detection], w: f32, h: f32) -> Vec<(usize, bool)> {
+    let largest = dets.iter().map(|d| area(&d.quad)).fold(0.0, f32::max);
+    let large = |i: &usize| area(&dets[*i].quad) >= MAIN_AREA * largest;
+    let off_centre = |i: usize| {
+        let (cx, cy) = centre(&dets[i].quad);
+        ((cx / w - 0.5).powi(2) + (cy / h - 0.5).powi(2)).sqrt()
+    };
+    let Some(main) = (0..dets.len())
+        .filter(large)
+        .min_by(|&a, &b| off_centre(a).total_cmp(&off_centre(b)))
+    else {
+        return Vec::new();
+    };
+    let in_main = |i: &usize| inside(&dets[main].quad, box_centre(&dets[*i].quad));
+    let mut order = vec![(main, false)];
+    order.extend(
+        (0..dets.len())
+            .filter(|i| *i != main && in_main(i))
+            .map(|i| (i, false)),
+    );
+    let mut tried = vec![dets[main].quad];
+    for i in (0..dets.len()).filter(|i| large(i) && !in_main(i)) {
+        if !tried.iter().any(|q| inside(q, box_centre(&dets[i].quad))) {
+            tried.push(dets[i].quad);
+            order.push((i, true));
+        }
+    }
+    order
+}
+
+/// `q` scaled about its centre so that a side grows and shrinks by
+/// `NUDGE_MODULES` modules, for a symbol of size `size` (`RxC`, the larger
+/// side counted, at least 10).
+fn nudged(q: &[[f32; 2]; 4], size: &str) -> [[[f32; 2]; 4]; 2] {
+    let n = size
+        .split('x')
+        .filter_map(|v| v.parse::<f32>().ok())
+        .fold(10.0, f32::max);
+    let (cx, cy) = centre(q);
+    [1.0, -1.0].map(|s| {
+        let f = 1.0 + s * 2.0 * NUDGE_MODULES / n;
+        q.map(|[x, y]| [cx + (x - cx) * f, cy + (y - cy) * f])
+    })
 }
 
 fn centre(q: &[[f32; 2]; 4]) -> (f32, f32) {
@@ -359,4 +414,70 @@ fn inside(q: &[[f32; 2]; 4], p: (f32, f32)) -> bool {
         })
         .collect();
     s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn det(score: f32, x: f32, y: f32, side: f32) -> Detection {
+        let quad = [[x, y], [x + side, y], [x + side, y + side], [x, y + side]];
+        Detection {
+            score,
+            quad,
+            finder_quad: quad,
+            p_dark: 1.0,
+            sizes: ["18x18", "16x16", "20x20"],
+        }
+    }
+
+    #[test]
+    fn main_symbol_first_then_large_detections() {
+        // 1000 x 800 image: a 0.45 code at the centre is main, the 0.90 one
+        // of the same size beside it is tried next
+        let dets = [
+            det(0.90, 600.0, 300.0, 200.0),
+            det(0.45, 400.0, 300.0, 200.0),
+        ];
+        assert_eq!(try_order(&dets, 1000.0, 800.0), [(1, false), (0, true)]);
+    }
+
+    #[test]
+    fn small_neighbour_is_not_tried() {
+        // a phone photo of one part: the main code, a neighbour's code of a
+        // tenth of its area in a corner
+        let dets = [det(0.66, 350.0, 250.0, 300.0), det(0.34, 20.0, 20.0, 95.0)];
+        assert_eq!(try_order(&dets, 1000.0, 800.0), [(0, false)]);
+    }
+
+    #[test]
+    fn detections_inside_are_one_symbol() {
+        // a second quad of the main code stays in the main group, one of a
+        // further code is not tried twice
+        let dets = [
+            det(0.9, 450.0, 350.0, 100.0),
+            det(0.8, 100.0, 100.0, 100.0),
+            det(0.7, 455.0, 355.0, 95.0),
+            det(0.6, 105.0, 105.0, 95.0),
+        ];
+        assert_eq!(
+            try_order(&dets, 1000.0, 800.0),
+            [(0, false), (2, false), (1, true)]
+        );
+    }
+
+    #[test]
+    fn nudged_quads_move_half_a_module_a_side() {
+        let q = det(1.0, 0.0, 0.0, 200.0).quad;
+        // 20x20 symbol of 10 px modules: sides of 210 and 190 px
+        let [grown, shrunk] = nudged(&q, "20x20");
+        assert!((grown[1][0] - grown[0][0] - 210.0).abs() < 1e-3);
+        assert!((shrunk[1][0] - shrunk[0][0] - 190.0).abs() < 1e-3);
+        assert_eq!(centre(&grown), centre(&q));
+        // the larger side counts; small symbols as 10 modules
+        let [g, _] = nudged(&q, "16x36");
+        assert!((g[1][0] - g[0][0] - 200.0 * (1.0 + 1.0 / 36.0)).abs() < 1e-3);
+        let [g, _] = nudged(&q, "8x8");
+        assert!((g[1][0] - g[0][0] - 220.0).abs() < 1e-3);
+    }
 }

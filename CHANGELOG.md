@@ -19,6 +19,13 @@ versions may change command-line flags and the JSON output.
   read before. On 767 held-out frames the `ml` build reads 646 codes
   instead of 559 and takes 2.6 s per frame instead of 3.6 s; the public
   sets read as before.
+- Detector first try (feature `ml`): when the symbol nearest the image
+  centre does not read, the other large detections are tried next (two
+  grid variants each), and last the main symbol's corners moved half a
+  module out and in. Small detections off the main symbol are still not
+  tried, so a photo of one part does not report a neighbouring part's
+  code. On 858 held-out frames the `ml` build reads 669 codes instead of
+  640 in 12 % less time; the public sets read as before, 10 % slower.
 
 ## [0.4.0] – 2026-10-20
 
